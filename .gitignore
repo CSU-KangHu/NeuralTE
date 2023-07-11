@@ -146,3 +146,6 @@ cython_debug/
 demo/*
 example_data/*
 example_data_UNS/*
+training_example_dir/input_dir/*
+training_example_dir/input_store_class_report_dir/*
+training_example_dir/opt_score_all.txt
