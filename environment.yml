@@ -1,0 +1,13 @@
+name: DeepTE
+channels:
+  - anaconda
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.6.15
+  - tensorflow-gpu=1.14.0
+  - biopython
+  - keras=2.2.4
+  - numpy=1.16.0
+  - scikit-learn
+
