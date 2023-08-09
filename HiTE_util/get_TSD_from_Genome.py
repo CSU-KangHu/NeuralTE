@@ -2,9 +2,8 @@
 import codecs
 import json
 import os
-import pandas as pd
 from Util import read_fasta, store_fasta, get_full_length_copies, getReverseSequence, search_confident_tsd, \
-    read_fasta_v1, to_excel_auto_column_weight
+    read_fasta_v1
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 
@@ -223,16 +222,16 @@ def getRepBaseTSDFromGenome(repbase_path, genome_path, temp_dir, threads, flanki
     return final_repbase_path
 
 if __name__ == '__main__':
-    # read all repbase library, get all unique classification
-    valid_sequence_count = 0
-    repeat_seq_count = 0
-    all_repbase_contigs = {}
-    #work_dir = '/homeb/hukang/TE_Classification_test/curated_lib'
-    work_dir = '/public/home/hpc194701009/TE_Classification_test/curated_lib'
-    all_repbase_path = work_dir + '/all_repbase.ref'
-    temp_dir = work_dir + '/temp'
-    if not os.path.exists(temp_dir):
-        os.makedirs(temp_dir)
+    # # read all repbase library, get all unique classification
+    # valid_sequence_count = 0
+    # repeat_seq_count = 0
+    # all_repbase_contigs = {}
+    # #work_dir = '/homeb/hukang/TE_Classification_test/curated_lib'
+    # work_dir = '/public/home/hpc194701009/TE_Classification_test/curated_lib'
+    # all_repbase_path = work_dir + '/all_repbase.ref'
+    # temp_dir = work_dir + '/temp'
+    # if not os.path.exists(temp_dir):
+    #     os.makedirs(temp_dir)
     # all_classification = set()
     # repbase_dir = '/homeb/hukang/KmerRepFinder_test/library/curated_lib/RepBase28.06.fasta'
     # for filename in os.listdir(repbase_dir):
@@ -309,110 +308,139 @@ if __name__ == '__main__':
     # print(all_species)
     # print(len(all_species))
 
-    #按照物种，统计序列
-    names, contigs = read_fasta_v1(all_repbase_path)
-    speices_TE_contigs = {}
-    species_TE_summary = {}
-    for name in names:
-        parts = name.split('\t')
-        species_name = parts[2]
-        label = parts[1]
-        TE_name = parts[0]
-        if not species_TE_summary.__contains__(species_name):
-            species_TE_summary[species_name] = {}
-        label_TE_summary = species_TE_summary[species_name]
-        if not label_TE_summary.__contains__(label):
-            label_TE_summary[label] = 0
-        label_count = label_TE_summary[label]
-        label_count += 1
-        label_TE_summary[label] = label_count
+    # #按照物种，统计序列
+    # names, contigs = read_fasta_v1(all_repbase_path)
+    # speices_TE_contigs = {}
+    # species_TE_summary = {}
+    # for name in names:
+    #     parts = name.split('\t')
+    #     species_name = parts[2]
+    #     label = parts[1]
+    #     TE_name = parts[0]
+    #     if not species_TE_summary.__contains__(species_name):
+    #         species_TE_summary[species_name] = {}
+    #     label_TE_summary = species_TE_summary[species_name]
+    #     if not label_TE_summary.__contains__(label):
+    #         label_TE_summary[label] = 0
+    #     label_count = label_TE_summary[label]
+    #     label_count += 1
+    #     label_TE_summary[label] = label_count
+    #
+    #     if not speices_TE_contigs.__contains__(species_name):
+    #         speices_TE_contigs[species_name] = {}
+    #     TE_contigs = speices_TE_contigs[species_name]
+    #     TE_contigs[name] = contigs[name]
+    # #print(species_TE_summary)
+    # #print(len(species_TE_summary))
+    #
+    #
+    # all_sequence_count = 0
+    # species_count = []
+    # species_count_dict = {}
+    # for species_name in species_TE_summary:
+    #     label_TE_summary = species_TE_summary[species_name]
+    #     total_num = 0
+    #     for label in label_TE_summary.keys():
+    #         total_num += label_TE_summary[label]
+    #     all_sequence_count += total_num
+    #     species_count.append((species_name, total_num))
+    #     species_count_dict[species_name] = total_num
+    # species_count.sort(key=lambda x: -x[1])
+    # #print('all sequence count:' + str(all_sequence_count))
+    #
+    # data = {}
+    # species_names = []
+    # TE_sequences_nums = []
+    # for item in species_count:
+    #     species_names.append(item[0])
+    #     TE_sequences_nums.append(item[1])
+    # data['Species Name'] = species_names
+    # data['Total TE number'] = TE_sequences_nums
+    #
+    # df = pd.DataFrame(data)
+    # # 将 DataFrame 存储到 Excel 文件中
+    # with pd.ExcelWriter(temp_dir + '/data.xlsx', engine="openpyxl") as writer:
+    #     to_excel_auto_column_weight(df, writer, f'novel TIR information')
+    #
+    # # 看看前top 100个物种中，有多少个物种我们实际上已经有基因组了
+    # keep_species_names = set()
+    # species_genome = {}
+    # with open('ncbi_ref.info', 'r') as f_r:
+    #     for line in f_r:
+    #         if line.startswith('#'):
+    #             continue
+    #         species_name = line.split('\t')[2]
+    #         genome = line.split('\t')[3]
+    #         is_plant = line.split('\t')[5]
+    #         species_genome[species_name] = (genome, is_plant)
+    #         keep_species_names.add(species_name)
+    #
+    # top_num = 100
+    # top_seq_count = 0
+    # not_keep_species_names = []
+    # for i, species_name in enumerate(species_names):
+    #     if i > top_num:
+    #         break
+    #     if species_name not in keep_species_names:
+    #         not_keep_species_names.append((species_name, species_count_dict[species_name]))
+    #     top_seq_count += species_count_dict[species_name]
+    # #print(not_keep_species_names)
+    # #print(len(not_keep_species_names))
+    # print('top num:' + str(top_num) + ', all sequence count:' + str(top_seq_count))
+    #
+    # # 把TE序列按照物种名称，存成不同的文件
+    # species_dir = work_dir + '/species'
+    # processed_species_dir = work_dir + '/species_processed'
+    # if not os.path.exists(species_dir):
+    #     os.makedirs(species_dir)
+    # if not os.path.exists(processed_species_dir):
+    #     os.makedirs(processed_species_dir)
+    # species_TE_files = {}
+    # for species_name in speices_TE_contigs.keys():
+    #     TE_contigs = speices_TE_contigs[species_name]
+    #     species = species_name.replace(' ', '_')
+    #     species_TE_files[species_name] = species_dir + '/' + species + '.ref'
+    #     store_fasta(TE_contigs, species_dir + '/' + species + '.ref')
+    # for i, species_name in enumerate(species_names):
+    #     if species_genome.__contains__(species_name):
+    #         print('current species name:' + species_name)
+    #         genome_path = species_genome[species_name][0]
+    #         is_plant = int(species_genome[species_name][1])
+    #
+    #         species = species_name.replace(' ', '_')
+    #         repbase_path = species_TE_files[species_name]
+    #         print(repbase_path)
+    #
+    #         threads = 40
+    #         flanking_len = 20
+    #         final_repbase_path = getRepBaseTSDFromGenome(repbase_path, genome_path, temp_dir, threads, flanking_len, is_plant, species)
+    #         os.system('mv ' + final_repbase_path + ' ' + processed_species_dir)
 
-        if not speices_TE_contigs.__contains__(species_name):
-            speices_TE_contigs[species_name] = {}
-        TE_contigs = speices_TE_contigs[species_name]
-        TE_contigs[name] = contigs[name]
-    #print(species_TE_summary)
-    #print(len(species_TE_summary))
+    # 统计训练集和测试集中不同TE类别的数量
+    work_dir = '/home/hukang/HiTE_Classification/data'
+    train_path = work_dir + '/repbase_train.ref'
+    test_path = work_dir + '/repbase_test.ref'
+    train_names, train_contigs = read_fasta_v1(train_path)
+    test_names, test_contigs = read_fasta_v1(test_path)
+    train_class_num = {}
+    species_set = set()
+    for name in test_names:
+        class_name = name.split('\t')[1]
+        species_name = name.split('\t')[2]
+        if not train_class_num.__contains__(class_name):
+            train_class_num[class_name] = 0
+        class_num = train_class_num[class_name]
+        train_class_num[class_name] = class_num + 1
+        species_set.add(species_name)
+    print(train_class_num)
+    print(len(species_set))
 
-
-    all_sequence_count = 0
-    species_count = []
-    species_count_dict = {}
-    for species_name in species_TE_summary:
-        label_TE_summary = species_TE_summary[species_name]
-        total_num = 0
-        for label in label_TE_summary.keys():
-            total_num += label_TE_summary[label]
-        all_sequence_count += total_num
-        species_count.append((species_name, total_num))
-        species_count_dict[species_name] = total_num
-    species_count.sort(key=lambda x: -x[1])
-    #print('all sequence count:' + str(all_sequence_count))
-
-    data = {}
-    species_names = []
-    TE_sequences_nums = []
-    for item in species_count:
-        species_names.append(item[0])
-        TE_sequences_nums.append(item[1])
-    data['Species Name'] = species_names
-    data['Total TE number'] = TE_sequences_nums
-
-    df = pd.DataFrame(data)
-    # 将 DataFrame 存储到 Excel 文件中
-    with pd.ExcelWriter(temp_dir + '/data.xlsx', engine="openpyxl") as writer:
-        to_excel_auto_column_weight(df, writer, f'novel TIR information')
-
-    # 看看前top 100个物种中，有多少个物种我们实际上已经有基因组了
-    keep_species_names = set()
-    species_genome = {}
-    with open('ncbi_ref.info', 'r') as f_r:
-        for line in f_r:
-            if line.startswith('#'):
-                continue
-            species_name = line.split('\t')[2]
-            genome = line.split('\t')[3]
-            is_plant = line.split('\t')[5]
-            species_genome[species_name] = (genome, is_plant)
-            keep_species_names.add(species_name)
-
-    top_num = 100
-    top_seq_count = 0
-    not_keep_species_names = []
-    for i, species_name in enumerate(species_names):
-        if i > top_num:
-            break
-        if species_name not in keep_species_names:
-            not_keep_species_names.append((species_name, species_count_dict[species_name]))
-        top_seq_count += species_count_dict[species_name]
-    #print(not_keep_species_names)
-    #print(len(not_keep_species_names))
-    print('top num:' + str(top_num) + ', all sequence count:' + str(top_seq_count))
-
-    # 把TE序列按照物种名称，存成不同的文件
-    species_dir = work_dir + '/species'
-    processed_species_dir = work_dir + '/species_processed'
-    if not os.path.exists(species_dir):
-        os.makedirs(species_dir)
-    if not os.path.exists(processed_species_dir):
-        os.makedirs(processed_species_dir)
-    species_TE_files = {}
-    for species_name in speices_TE_contigs.keys():
-        TE_contigs = speices_TE_contigs[species_name]
-        species = species_name.replace(' ', '_')
-        species_TE_files[species_name] = species_dir + '/' + species + '.ref'
-        store_fasta(TE_contigs, species_dir + '/' + species + '.ref')
-    for i, species_name in enumerate(species_names):
-        if species_genome.__contains__(species_name):
-            print('current species name:' + species_name)
-            genome_path = species_genome[species_name][0]
-            is_plant = int(species_genome[species_name][1])
-
-            species = species_name.replace(' ', '_')
-            repbase_path = species_TE_files[species_name]
-            print(repbase_path)
-
-            threads = 40
-            flanking_len = 20
-            final_repbase_path = getRepBaseTSDFromGenome(repbase_path, genome_path, temp_dir, threads, flanking_len, is_plant, species)
-            os.system('mv ' + final_repbase_path + ' ' + processed_species_dir)
+    # #统计train里面序列长度超过15K的有多少
+    # K15 = 15000
+    # count = 0
+    # for name in train_names:
+    #     seq = train_contigs[name]
+    #     seq_len = len(seq)
+    #     if seq_len >= K15:
+    #         count += 1
+    # print(count)

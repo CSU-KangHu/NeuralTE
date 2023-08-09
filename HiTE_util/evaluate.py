@@ -11,24 +11,24 @@ import random
 def get_metrics(y_test, y_pred):
     # 计算准确率
     accuracy = accuracy_score(y_test, y_pred)
-    print("Accuracy：", accuracy)
+    print("Accuracy:", accuracy)
     # 计算精确率
     precision = precision_score(y_test, y_pred, average='macro')
-    print("Precision：", precision)
+    print("Precision:", precision)
     # 计算召回率
     recall = recall_score(y_test, y_pred, average='macro')
-    print("Recall：", recall)
+    print("Recall:", recall)
     # 计算F1值
     f1 = f1_score(y_test, y_pred, average='macro')
-    print("F1：", f1)
+    print("F1:", f1)
 
 
-work_dir = '/homeb/hukang/TE_Classification_test/curated_lib'
-threads = 40
-cur_repbase_train_path = work_dir + '/repbase_train_part.ref'
-cur_repbase_test_path = work_dir + '/repbase_test_part.ref'
+# work_dir = '/home/hukang/HiTE_Classification/data'
+# threads = 40
+# cur_repbase_train_path = work_dir + '/repbase_train.ref'
+# cur_repbase_test_path = work_dir + '/repbase_test.ref'
 # # 1. 先将Repbase数据按照8-2比例划分成训练集和测试集
-# cur_repbase_path = work_dir + '/repbase_processed_part.ref'
+# cur_repbase_path = work_dir + '/all_repbase.ref_preprocess.ref.update'
 # names, contigs = read_fasta_v1(cur_repbase_path)
 # # 随机打乱列表
 # random.shuffle(names)
@@ -155,15 +155,83 @@ cur_repbase_test_path = work_dir + '/repbase_test_part.ref'
 # get_metrics(y_test, y_pred)
 
 
-# 4.在test数据集上评估DeepTE
-## 4.1 对test数据集
-DeepTE_home = '/public/home/hpc194701009/TE_Classification/DeepTE-master'
-#os.system('cd ' + DeepTE_home + ' && python DeepTE.py -d test_work -o test_result -i example_data/input_test.fasta -sp P -m_dir models/Plants_model/')
+# # 4.在test数据集上评估DeepTE
+# ## 4.1 对test数据集
+# DeepTE_home = '/public/home/hpc194701009/TE_Classification/DeepTE-master'
+# #os.system('cd ' + DeepTE_home + ' && python DeepTE.py -d test_work -o test_result -i example_data/input_test.fasta -sp P -m_dir models/Plants_model/')
+# repbase_test_path = '/public/home/hpc194701009/TE_Classification/DeepTE-master/example_data/repbase_test_part.ref'
+# names, contigs = read_fasta_v1(repbase_test_path)
+# y_labels_dict = {}
+# for name in names:
+#     parts = name.split('\t')
+#     seq_name = parts[0]
+#     label = parts[1]
+#     y_labels_dict[seq_name] = label
+#
+# ## 4.2 将DeepTE的分类标签转成superfamily级别，如果没到superfamily，则为unknown
+# DeepTE_labels = {'ClassII_DNA_Mutator_unknown': 'Mutator', 'ClassII_DNA_TcMar_nMITE': 'Tc1-Mariner',
+#                  'ClassII_DNA_hAT_unknown': 'hAT', 'ClassII_DNA_P_MITE': 'P', 'ClassI_nLTR': 'Unknown',
+#                  'ClassIII_Helitron': 'Helitron', 'ClassI_LTR_Gypsy': 'Gypsy', 'ClassI_LTR': 'Unknown',
+#                  'ClassII_DNA_Mutator_MITE': 'Mutator', 'ClassI_LTR_Copia': 'Copia', 'ClassI_nLTR_LINE': 'Unknown',
+#                  'ClassII_DNA_CACTA_unknown': 'CACTA', 'ClassI_nLTR_LINE_I': 'I', 'ClassI_nLTR_DIRS': 'DIRS',
+#                  'ClassII_MITE': 'Unknown', 'unknown': 'Unknown', 'ClassII_DNA_TcMar_unknown': 'Tc1-Mariner',
+#                  'ClassII_DNA_CACTA_MITE': 'CACTA', 'ClassII_DNA_Harbinger_unknown': 'PIF-Harbinger',
+#                  'ClassII_DNA_hAT_nMITE': 'hAT', 'ClassI': 'Unknown', 'ClassI_nLTR_SINE_7SL': '7SL',
+#                  'ClassII_DNA_Harbinger_nMITE': 'PIF-Harbinger', 'ClassII_DNA_Mutator_nMITE': 'Mutator',
+#                  'ClassII_DNA_hAT_MITE': 'hAT', 'ClassII_DNA_CACTA_nMITE': 'CACTA', 'ClassI_nLTR_SINE_tRNA': 'tRNA',
+#                  'ClassII_DNA_TcMar_MITE': 'Tc1-Mariner', 'ClassII_DNA_P_nMITE': 'P', 'ClassI_nLTR_PLE': 'Unknown',
+#                  'ClassII_DNA_Harbinger_MITE': 'PIF-Harbinger', 'ClassI_nLTR_LINE_L1': 'L1', 'ClassII_nMITE': 'Unknown'}
+#
+# predict_path = '/public/home/hpc194701009/TE_Classification/DeepTE-master/repbase_test_result/opt_DeepTE.txt'
+# y_predict_seq_names = []
+# y_predicts = []
+# with open(predict_path, 'r') as f_r:
+#     for line in f_r:
+#         line = line.replace('\n', '')
+#         parts = line.split('\t')
+#         seq_name = parts[0]
+#         predict = parts[1]
+#         predict = DeepTE_labels[predict]
+#         y_predict_seq_names.append(seq_name)
+#         y_predicts.append(predict)
+#
+# y_labels = []
+# for seq_name in y_predict_seq_names:
+#     y_labels.append(y_labels_dict[seq_name])
+#
+# print(y_labels)
+# print(len(y_labels))
+# print(y_predicts)
+# print(len(y_predicts))
+# y_test = np.array(y_labels)
+# y_pred = np.array(y_predicts)
+# get_metrics(y_test, y_pred)
 
 
-
-
-
+# # 5.在test数据上评估TERL的准确性
+# repbase_test_path = '/public/home/hpc194701009/TE_Classification/TERL/Data/DS1/repbase_test_part.ref'
+# names, contigs = read_fasta_v1(repbase_test_path)
+# y_labels = []
+# for name in names:
+#     parts = name.split('\t')
+#     label = parts[1]
+#     y_labels.append(label)
+#
+# predict_path = '/public/home/hpc194701009/TE_Classification/TERL/TERL_20230720_173316_repbase_test_part.ref'
+# names, contigs = read_fasta_v1(predict_path)
+# y_predicts = []
+# for name in names:
+#     parts = name.split('\t')
+#     label = parts[-2]
+#     y_predicts.append(label)
+#
+# print(y_labels)
+# print(len(y_labels))
+# print(y_predicts)
+# print(len(y_predicts))
+# y_test = np.array(y_labels)
+# y_pred = np.array(y_predicts)
+# get_metrics(y_test, y_pred)
 
 
 

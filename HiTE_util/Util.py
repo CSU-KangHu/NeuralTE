@@ -3,6 +3,8 @@ import itertools
 import os
 #from openpyxl.utils import get_column_letter
 #from pandas import ExcelWriter
+import re
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
 #import pandas as pd
 
@@ -436,33 +438,35 @@ def search_confident_tsd(orig_seq, raw_tir_start, raw_tir_end, tsd_search_distan
 #         # openpyxl引擎设置字符宽度时会缩水0.5左右个字符，所以干脆+2使左右都空出一个字宽。
 #         worksheet.column_dimensions[get_column_letter(i)].width = width + 2
 
+def replace_non_atcg(sequence):
+    return re.sub("[^ATCG]", "", sequence)
+
 def load_repbase_with_TSD(path):
+    #提取特征太慢了，我们使用多进程去加速
     names, contigs = read_fasta_v1(path)
     X = []
-    Y = []
+    Y = {}
+    seq_names = []
     for name in names:
         parts = name.split('\t')
         seq_name = parts[0]
         label = parts[1]
         species_name = parts[2]
-        TSD_seq = parts[3]
+        TSD_seq = parts[3].split(':')[1]
+        TSD_len = int(parts[4].split(':')[1])
+        LTR_info = parts[5]
+        TIR_info = parts[6]
+        # LTR_info = parts[3]
+        # TIR_info = parts[4]
         seq = contigs[name]
-        seq = seq.replace("Y", "C")  # undetermined nucleotides in splice
-        seq = seq.replace("D", "G")
-        seq = seq.replace("S", "C")
-        seq = seq.replace("R", "G")
-        seq = seq.replace("V", "A")
-        seq = seq.replace("K", "G")
-        seq = seq.replace("N", "T")
-        seq = seq.replace("H", "A")
-        seq = seq.replace("W", "A")
-        seq = seq.replace("M", "C")
-        seq = seq.replace("X", "G")
-        seq = seq.replace("B", "C")
-        x_feature = (seq, TSD_seq)
+        seq = replace_non_atcg(seq)  # undetermined nucleotides in splice
+        x_feature = (seq_name, seq, TSD_seq, TSD_len, LTR_info, TIR_info)
         X.append(x_feature)
-        Y.append(label)
-    return X, Y
+        Y[seq_name] = label
+        # y_feature = (seq_name, label)
+        # Y.append(y_feature)
+        seq_names.append((seq_name, label))
+    return X, Y, seq_names
 
 ##word_seq generates eg. ['AA', 'AT', 'TC', 'CG', 'GT']
 def word_seq(seq, k, stride=1):
@@ -494,17 +498,262 @@ def generate_mat(words_list,kmer_dic):
         num_list.append(kmer_dic[eachkmer])
     return (num_list)
 
-##generate matrix for all samples
-def generate_mats(X):
-    seq_mats = []
-    for x in X:
-        seq = x[0]
-        tsd_seq = x[1]
-        words_list = word_seq(seq, 7, stride=1)  ##change the k to 3
-        kmer_dic = generate_kmer_dic(7)  ##this number should be the same as the window slide number
+def get_batch_kmer_freq(grouped_x, kmer_sizes):
+    group_dict = {}
+    for x in grouped_x:
+        seq_name = x[0]
+        seq = x[1]
+        TSD_seq = x[2]
+        connected_num_list = []
+        for kmer_size in kmer_sizes:
+            words_list = word_seq(seq, kmer_size, stride=1)
+            kmer_dic = generate_kmer_dic(kmer_size)
+            num_list = generate_mat(words_list, kmer_dic)
+            connected_num_list = np.concatenate((connected_num_list, num_list))
+
+        # padding_length = max_TE_len - len(seq)
+        # encoded_sequence = np.zeros(max_TE_len, dtype=np.int8)
+        # for i, base in enumerate(seq):
+        #     encoded_sequence[i] = base_num[base]
+        # for i in range(padding_length):
+        #     encoded_sequence[len(seq) + i] = 0
+        # num_list = encoded_sequence.tolist()
+
+        # 将TSD序列转成one-hot编码
+        encoder = np.eye(4, dtype=np.int8)
+        max_length = 11
+        padding_length = max_length - len(TSD_seq)
+        encoded_TSD = np.zeros((max_length, 4), dtype=np.int8)
+        for i, base in enumerate(TSD_seq):
+            if base == 'A':
+                encoded_TSD[i] = encoder[0]
+            elif base == 'T':
+                encoded_TSD[i] = encoder[1]
+            elif base == 'C':
+                encoded_TSD[i] = encoder[2]
+            elif base == 'G':
+                encoded_TSD[i] = encoder[3]
+        for i in range(padding_length):
+            encoded_TSD[len(TSD_seq) + i] = np.zeros(4)
+        onehot_encoded_flat = encoded_TSD.reshape(-1)
+        connected_list = np.concatenate((connected_num_list, onehot_encoded_flat))
+        group_dict[seq_name] = connected_list
+    return group_dict
+
+def get_batch_kmer_freq_v1(grouped_x, kmer_sizes):
+    group_dict = {}
+    for x in grouped_x:
+        # 将序列拆分成internal_Seq, LTR, TIR三块组成
+        seq_name = x[0]
+        seq = x[1]
+        TSD_seq = x[2]
+        TSD_len = x[3]
+        LTR_pos = x[4]
+        TIR_pos = x[5]
+        # LTR_pos = x[2]
+        # TIR_pos = x[3]
+        # 获取LTR序列，以及内部序列。如果同时存在LTR和TIR，取LTR的内部序列（因为LTR相对更长，更可靠）
+        internal_seq = ''
+        LTR_seq = ''
+        TIR_seq = ''
+        LTR_pos_str = str(LTR_pos.split(':')[1]).strip()
+        TIR_pos_str = str(TIR_pos.split(':')[1]).strip()
+        if LTR_pos_str == '' and TIR_pos_str == '':
+            internal_seq = seq
+        if TIR_pos_str != '':
+            TIR_parts = TIR_pos_str.split(',')
+            left_TIR_start = int(TIR_parts[0].split('-')[0])
+            left_TIR_end = int(TIR_parts[0].split('-')[1])
+            right_TIR_start = int(TIR_parts[1].split('-')[0])
+            right_TIR_end = int(TIR_parts[1].split('-')[1])
+            TIR_seq = seq[left_TIR_start-1: left_TIR_end]
+            internal_seq = seq[left_TIR_end: right_TIR_start-1]
+        if LTR_pos_str != '':
+            LTR_parts = LTR_pos_str.split(',')
+            left_LTR_start = int(LTR_parts[0].split('-')[0])
+            left_LTR_end = int(LTR_parts[0].split('-')[1])
+            right_LTR_start = int(LTR_parts[1].split('-')[0])
+            right_LTR_end = int(LTR_parts[1].split('-')[1])
+            LTR_seq = seq[left_LTR_start-1: left_LTR_end]
+            internal_seq = seq[left_LTR_end: right_LTR_start-1]
+
+        # 将internal_seq，LTR，TIR表示成kmer频次
+        connected_num_list = []
+        kmer_size = kmer_sizes[0]
+        words_list = word_seq(internal_seq, kmer_size, stride=1)
+        kmer_dic = generate_kmer_dic(kmer_size)
+        num_list = generate_mat(words_list, kmer_dic)
+        connected_num_list = np.concatenate((connected_num_list, num_list))
+
+        kmer_size = kmer_sizes[1]
+        words_list = word_seq(LTR_seq, kmer_size, stride=1)
+        kmer_dic = generate_kmer_dic(kmer_size)
+        num_list = generate_mat(words_list, kmer_dic)
+        connected_num_list = np.concatenate((connected_num_list, num_list))
+
+        kmer_size = kmer_sizes[2]
+        words_list = word_seq(TIR_seq, kmer_size, stride=1)
+        kmer_dic = generate_kmer_dic(kmer_size)
         num_list = generate_mat(words_list, kmer_dic)
 
-        ##store the all the samples into seq_mats
-        ##seq_mats = [[0,1,3,4],[3,4,5,6],...]
-        seq_mats.append(num_list)
-    return (seq_mats)
+        num_list.append(TSD_len)
+        connected_num_list = np.concatenate((connected_num_list, num_list))
+        #group_dict[seq_name] = connected_num_list
+
+        # 将TSD序列转成one-hot编码
+        encoder = np.eye(4, dtype=np.int8)
+        max_length = 11
+        padding_length = max_length - len(TSD_seq)
+        encoded_TSD = np.zeros((max_length, 4), dtype=np.int8)
+        for i, base in enumerate(TSD_seq):
+            if base == 'A':
+                encoded_TSD[i] = encoder[0]
+            elif base == 'T':
+                encoded_TSD[i] = encoder[1]
+            elif base == 'C':
+                encoded_TSD[i] = encoder[2]
+            elif base == 'G':
+                encoded_TSD[i] = encoder[3]
+        for i in range(padding_length):
+            encoded_TSD[len(TSD_seq) + i] = np.zeros(4)
+        onehot_encoded_flat = encoded_TSD.reshape(-1)
+        connected_list = np.concatenate((connected_num_list, onehot_encoded_flat))
+        group_dict[seq_name] = connected_list
+    return group_dict
+
+def split_list_into_groups(lst, group_size):
+    return [lst[i:i+group_size] for i in range(0, len(lst), group_size)]
+
+def generate_feature_mats(X, Y, seq_names, all_wicker_class, kmer_sizes, threads):
+    seq_mats = {}
+    ex = ProcessPoolExecutor(threads)
+    jobs = []
+    grouped_X = split_list_into_groups(X, 100)
+
+    for grouped_x in grouped_X:
+        job = ex.submit(get_batch_kmer_freq_v1, grouped_x, kmer_sizes)
+        jobs.append(job)
+    ex.shutdown(wait=True)
+
+    for job in as_completed(jobs):
+        cur_group_dict = job.result()
+        seq_mats.update(cur_group_dict)
+
+    final_X = []
+    final_Y = []
+    for item in seq_names:
+        seq_name = item[0]
+        x = seq_mats[seq_name]
+        final_X.append(x)
+        label = Y[seq_name]
+        label_num = all_wicker_class[label]
+        final_Y.append(label_num)
+    return np.array(final_X), np.array(final_Y)
+
+##generate matrix for all samples
+def generate_mats(X, seq_names, kmer_sizes, threads):
+    seq_mats = {}
+    ex = ProcessPoolExecutor(threads)
+    jobs = []
+    grouped_X = split_list_into_groups(X, 100)
+
+    for grouped_x in grouped_X:
+        job = ex.submit(get_batch_kmer_freq, grouped_x, kmer_sizes)
+        jobs.append(job)
+    ex.shutdown(wait=True)
+
+    for job in as_completed(jobs):
+        cur_group_dict = job.result()
+        seq_mats.update(cur_group_dict)
+
+    final_X = []
+    for seq_name in seq_names:
+        x = seq_mats[seq_name]
+        final_X.append(x)
+    return np.array(final_X)
+
+def conv_labels(Y, all_wicker_class):
+    final_Y = []
+    final_Y_name = []
+    for y in Y:
+        seq_name = y[0]
+        label = y[1]
+        label_num = all_wicker_class[label]
+        final_Y.append(label_num)
+        final_Y_name.append((seq_name, label_num))
+    return np.array(final_Y), np.array(final_Y_name)
+
+def load_repbase(train_path, max_seq_len, threads):
+    train_names, train_contigs = read_fasta_v1(train_path)
+
+    # Step 2: 并行化加载数据
+    ex = ProcessPoolExecutor(threads)
+    jobs = []
+    grouped_train_names = split_list_into_groups(train_names, 100)
+    grouped_train_items = []
+    for train_names in grouped_train_names:
+        train_items = []
+        for name in train_names:
+            seq = train_contigs[name]
+            train_items.append((name, seq))
+        grouped_train_items.append(train_items)
+    for train_items in grouped_train_items:
+        job = ex.submit(get_batch_matrix, train_items, max_seq_len)
+        jobs.append(job)
+    ex.shutdown(wait=True)
+
+    train_data = []
+    train_label = []
+    train_label_name = []
+    for job in as_completed(jobs):
+        cur_train_matrix, cur_train_label, cur_train_label_name = job.result()
+        train_data.extend(cur_train_matrix)
+        train_label.extend(cur_train_label)
+        train_label_name.extend(cur_train_label_name)
+    return np.array(train_data), np.array(train_label), np.array(train_label_name)
+
+def get_batch_matrix(train_items, max_seq_len):
+    # 将所有序列都转为max_seq_len长度，不足的部分补B，每条序列构建一个max_seq_len * 6(A/T/C/G/N/B)的矩阵
+    train_data = []
+    train_label = []
+    for name, seq in train_items:
+        seq_name = name.split('\t')[0]
+        label = name.split('\t')[1]
+        seq = replace_non_atcg(seq)  # 将非ATCG的碱基转为N字符
+        seq = pad_string_to_max_length(seq, max_seq_len)  # 将序列补齐到最大长度，不足补’B‘
+
+        row_num = max_seq_len
+        col_num = 6
+        encoder = np.eye(col_num)
+        encoded_seq = np.zeros((row_num, col_num))
+        for i, base in enumerate(seq):
+            if base == 'A':
+                encoded_seq[i] = encoder[0]
+            elif base == 'T':
+                encoded_seq[i] = encoder[1]
+            elif base == 'C':
+                encoded_seq[i] = encoder[2]
+            elif base == 'G':
+                encoded_seq[i] = encoder[3]
+            elif base == 'N':
+                encoded_seq[i] = encoder[4]
+            elif base == 'B':
+                encoded_seq[i] = encoder[5]
+        train_data.append(encoded_seq)
+        train_label.append((seq_name, label))
+    # 将label转为分类数字
+    all_wicker_class = {'Tc1-Mariner': 0, 'hAT': 1, 'Mutator': 2, 'Merlin': 3, 'Transib': 4, 'P': 5, 'PiggyBac': 6,
+                        'PIF-Harbinger': 7, 'CACTA': 8, 'Crypton': 9, 'Helitron': 10, 'Maverick': 11, 'Copia': 12,
+                        'Gypsy': 13, 'Bel-Pao': 14, 'Retrovirus': 15, 'DIRS': 16, 'Ngaro': 17, 'VIPER': 18,
+                        'Penelope': 19, 'R2': 20, 'RTE': 21, 'Jockey': 22, 'L1': 23, 'I': 24, 'tRNA': 25, '7SL': 26,
+                        '5S': 27}
+    class_num = len(all_wicker_class)
+    train_label, train_label_name = conv_labels(train_label, all_wicker_class)
+    # train_label = to_categorical(train_label, int(class_num))
+    return train_data, train_label, train_label_name
+
+def pad_string_to_max_length(input_string, max_length, padding_char='B'):
+    if len(input_string) >= max_length:
+        return input_string
+    else:
+        return input_string.ljust(max_length, padding_char)
