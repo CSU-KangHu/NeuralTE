@@ -23,28 +23,28 @@ def get_metrics(y_test, y_pred):
     print("F1:", f1)
 
 
-# work_dir = '/home/hukang/HiTE_Classification/data'
-# threads = 40
-# cur_repbase_train_path = work_dir + '/repbase_train.ref'
-# cur_repbase_test_path = work_dir + '/repbase_test.ref'
-# # 1. 先将Repbase数据按照8-2比例划分成训练集和测试集
-# cur_repbase_path = work_dir + '/all_repbase.ref_preprocess.ref.update'
-# names, contigs = read_fasta_v1(cur_repbase_path)
-# # 随机打乱列表
-# random.shuffle(names)
-# # 计算划分的索引位置
-# split_index = int(0.8 * len(names))
-# # 划分成80%和20%的两个列表
-# train_list = names[:split_index]
-# test_list = names[split_index:]
-# train_contigs = {}
-# test_contigs = {}
-# for name in train_list:
-#     train_contigs[name] = contigs[name]
-# for name in test_list:
-#     test_contigs[name] = contigs[name]
-# store_fasta(train_contigs, cur_repbase_train_path)
-# store_fasta(test_contigs, cur_repbase_test_path)
+work_dir = '/home/hukang/NeuralTE/data'
+threads = 40
+cur_repbase_train_path = work_dir + '/repbase_train.ref'
+cur_repbase_test_path = work_dir + '/repbase_test.ref'
+# 1. 先将Repbase数据按照8-2比例划分成训练集和测试集
+cur_repbase_path = work_dir + '/all_repbase.ref_preprocess.ref.update'
+names, contigs = read_fasta_v1(cur_repbase_path)
+# 随机打乱列表
+random.shuffle(names)
+# 计算划分的索引位置
+split_index = int(0.8 * len(names))
+# 划分成80%和20%的两个列表
+train_list = names[:split_index]
+test_list = names[split_index:]
+train_contigs = {}
+test_contigs = {}
+for name in train_list:
+    train_contigs[name] = contigs[name]
+for name in test_list:
+    test_contigs[name] = contigs[name]
+store_fasta(train_contigs, cur_repbase_train_path)
+store_fasta(test_contigs, cur_repbase_test_path)
 
 # # 2. 在test数据集上评估RepeatClassifier
 ## 2.1 运行RepeatClassifier
@@ -81,8 +81,12 @@ def get_metrics(y_test, y_pred):
 #         elif len(wicker_superfamily_parts) > 1:
 #             wicker_superfamily = wicker_superfamily_parts[1].replace('(', '').replace(')', '')
 #         rm_full_type = rm_type+'/'+rm_subtype
+#         if wicker_superfamily == 'ERV':
+#             wicker_superfamily = 'Retrovirus'
 #         rmToWicker[rm_full_type] = wicker_superfamily
 #         wicker_superfamily_set.add(wicker_superfamily)
+# #补充一些元素
+# rmToWicker['LINE/R2'] = 'R2'
 # print(wicker_superfamily_set)
 # print(len(wicker_superfamily_set))
 #
@@ -120,6 +124,96 @@ def get_metrics(y_test, y_pred):
 # y_test = np.array(y_labels)
 # y_pred = np.array(y_predicts)
 # get_metrics(y_test, y_pred)
+
+
+# # 3.在test数据集上评估domain结果
+# # 3.2 将Dfam分类名称转成wicker格式
+# ## 3.2.1 这个文件里包含了RepeatMasker类别、Repbase、wicker类别的转换
+# rmToWicker = {}
+# wicker_superfamily_set = set()
+# with open('TEClasses.tsv', 'r') as f_r:
+#     for i,line in enumerate(f_r):
+#         parts = line.split('\t')
+#         rm_type = parts[5]
+#         rm_subtype = parts[6]
+#         repbase_type = parts[7]
+#         wicker_type = parts[8]
+#         wicker_type_parts = wicker_type.split('/')
+#         #print(rm_type + ',' + rm_subtype + ',' + repbase_type + ',' + wicker_type)
+#         # if len(wicker_type_parts) != 3:
+#         #     continue
+#         wicker_superfamily_parts = wicker_type_parts[-1].strip().split(' ')
+#         if len(wicker_superfamily_parts) == 1:
+#             wicker_superfamily = wicker_superfamily_parts[0]
+#         elif len(wicker_superfamily_parts) > 1:
+#             wicker_superfamily = wicker_superfamily_parts[1].replace('(', '').replace(')', '')
+#         rm_full_type = rm_type+'/'+rm_subtype
+#         if wicker_superfamily == 'ERV':
+#             wicker_superfamily = 'Retrovirus'
+#         rmToWicker[rm_full_type] = wicker_superfamily
+#         wicker_superfamily_set.add(wicker_superfamily)
+# #补充一些元素
+# rmToWicker['LINE/R2'] = 'R2'
+# rmToWicker['LTR/ERVL'] = 'Retrovirus'
+# rmToWicker['LTR/Ngaro'] = 'DIRS'
+# print(wicker_superfamily_set)
+# print(len(wicker_superfamily_set))
+#
+# # 3.1 解析domain文件，获取TE_name, label
+# data_dir = '/home/hukang/NeuralTE/data'
+# domain_path = data_dir + '/repbase_test_part.64.ref.update.domain'
+# RC_name_labels = {}
+# with open(domain_path, 'r') as f_r:
+#     for i, line in enumerate(f_r):
+#         if i < 2:
+#             continue
+#         parts = line.split('\t')
+#         TE_name = parts[0]
+#         label = parts[1].split('#')[1]
+#         if RC_name_labels.__contains__(TE_name):
+#             continue
+#         if not rmToWicker.__contains__(label):
+#             label = 'Unknown'
+#         else:
+#             wicker_superfamily = rmToWicker[label]
+#             label = wicker_superfamily
+#         RC_name_labels[TE_name] = label
+#
+# # 3.2 获取test数据的name与标签，然后与domain预测的标签进行评估
+# cur_repbase_test_path = data_dir + '/repbase_test_part.64.ref.update'
+# names, contigs = read_fasta_v1(cur_repbase_test_path)
+# sequence_names = []
+# TE_labels = {}
+# y_labels = []
+# for name in names:
+#     parts = name.split('\t')
+#     sequence_names.append(parts[0])
+#     label = parts[1]
+#     TE_labels[parts[0]] = label
+#     y_labels.append(label)
+#
+# y_predicts = []
+# for name in sequence_names:
+#     if not RC_name_labels.__contains__(name):
+#         predict_label = 'Unknown'
+#     else:
+#         predict_label = RC_name_labels[name]
+#     y_predicts.append(predict_label)
+#     # label = TE_labels[name]
+#     # y_labels.append(label)
+#     # if name == 'ERV3-1-intactLTR1_XT':
+#     #     print('here')
+#     # if label != predict_label:
+#     #     print(name, label, predict_label)
+#
+# print(y_labels)
+# print(len(y_labels))
+# print(y_predicts)
+# print(len(y_predicts))
+# y_test = np.array(y_labels)
+# y_pred = np.array(y_predicts)
+# get_metrics(y_test, y_pred)
+
 
 
 # 3.在test数据集上评估ClassifyTE

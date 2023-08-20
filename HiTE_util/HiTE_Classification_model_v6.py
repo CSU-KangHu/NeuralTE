@@ -1,8 +1,8 @@
-# 融合了Seq, LTR, TIR, TSD, Domain等多种特征进行训练，同时包含k-mer的位置信息，结果为：
-# Accuracy: 0.9501869658119658
-# Precision: 0.9619140278215257
-# Recall: 0.88073047596089
-# F1: 0.91124188158888
+# 融合了Seq, LTR, TIR, TSD, Domain等多种特征进行训练，结果为：
+# Accuracy: 0.9513888888888888
+# Precision: 0.9622072790781754
+# Recall: 0.8871681403366948
+# F1: 0.9172423156754478
 
 import json
 import os
@@ -75,6 +75,13 @@ def run_training(batch_size=32, epochs=1, use_checkpoint=1):
         ),
         EarlyStopping(monitor='val_loss', patience=20)
     ]
+    # model.fit(
+    #     train_dataset,
+    #     epochs=epochs,
+    #     callbacks=callbacks,
+    #     validation_data=val_dataset,
+    #     verbose=1,
+    # )
 
     model.fit(X_train, Y_train_one_hot, validation_data=(X_validate, Y_validate_one_hot), callbacks=callbacks,
               batch_size=batch_size, epochs=epochs, verbose=1)
@@ -110,20 +117,14 @@ def get_compiled_model():
     # model.add(Dense(int(class_num), activation='softmax'))
     # model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
 
-    # 32-32-32：F1: 0.91124188158888
-    # 32-32-32-32： F1: 0.9120153577045595
-    # 128-64-32-32： F1: 0.9047548731675614
-
     # 2. CNN model
     model = Sequential()
-    model.add(Conv1D(32, 3, activation='relu', input_shape=(X_feature_len, 1)))
+    model.add(Conv1D(100, 3, activation='relu', input_shape=(X_feature_len, 1)))
     #model.add(MaxPooling1D(pool_size=2))
-    model.add(Conv1D(32, 3, activation='relu'))
+    model.add(Conv1D(150, 3, activation='relu'))
     #model.add(MaxPooling1D(pool_size=2))
-    model.add(Conv1D(32, 3, activation='relu'))
+    model.add(Conv1D(225, 3, activation='relu'))
     #model.add(MaxPooling1D(pool_size=2))
-    model.add(Conv1D(32, 3, activation='relu'))
-    # model.add(MaxPooling1D(pool_size=2))
     model.add(Dropout(0.5))
 
     model.add(Flatten())
@@ -133,39 +134,31 @@ def get_compiled_model():
     model.add(Dense(int(class_num), activation='softmax'))
     model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
 
-    # from keras.layers import Conv1D, Flatten, Dense, Dropout, Input
-    # from keras.models import Model
-    # from keras.layers import Attention
-
-    # 100-150-225: F1: 0.9061523877354777
-    # 32: F1: 0.8803469039813364
-    # 32-32: F1: 0.914593253763968
-    # 32-32-32: F1: 0.9177968092796981
-    # 32-64-128: F1: 0.9067107094594844
-    # 32-64-32: F1: 0.914074828497396
-
-    # # 输入层
-    # input_layer = Input(shape=(X_feature_len, 1))
-    # # 添加卷积层
-    # conv1 = Conv1D(32, 3, activation='relu')(input_layer)
-    # # # 添加自注意力层
-    # # self_attention = Attention()([conv1, conv1])  # 注意力机制输入为[query, value]
-    # # conv2 = Conv1D(150, 3, activation='relu')(self_attention)
-    # conv2 = Conv1D(64, 3, activation='relu')(conv1)
-    # conv3 = Conv1D(32, 3, activation='relu')(conv2)
-    # dropout1 = Dropout(0.5)(conv3)
-    # # 添加展平层和全连接层
-    # flatten = Flatten()(dropout1)
-    # dense1 = Dense(128, activation='relu')(flatten)
-    # dropout2 = Dropout(0.5)(dense1)
-    # # 输出层
-    # output_layer = Dense(int(class_num), activation='softmax')(dropout2)
-    # # 构建模型
-    # model = Model(inputs=input_layer, outputs=output_layer)
-    # # 编译模型
+    # # 3. attention CNN
+    # from tensorflow.keras.layers import Input
+    # from tensorflow.keras.models import Model
+    # ip = Input()
+    # x = augmented_conv1d(ip, shape=(X_feature_len, 1), filters=20)
+    #
+    # model = Model(ip, x)
     # model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
-    # 打印模型摘要
     # model.summary()
+
+    # from tensorflow.keras.layers import Input
+    # from tensorflow.keras.models import Model
+    # tf.compat.v1.disable_eager_execution()
+    # ip = Input(shape=(None, X_feature_len))
+    # x = Conv1D(100, 3, activation='relu')(ip)
+    # x = MaxPooling1D(pool_size=2)(x)
+    # x = Conv1D(150, 3, activation='relu')(x)
+    # x = MaxPooling1D(pool_size=2)(x)
+    # x = Dropout(0.5)(x)
+    # x = augmented_conv1d(x, shape=(X_feature_len, 150), filters=20)
+    # x = Flatten()(x)
+    # x = Dense(128, activation='relu')(x)
+    # op = Dropout(0.5)(x)
+    # model = Model(ip, op)
+    # model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
 
 
     # # LSTM model
@@ -201,7 +194,7 @@ def get_metrics(y_test, y_pred, all_class_list):
 
 if __name__ == '__main__':
     # Step 0: 配置参数
-    batch_size = 32
+    batch_size = 128
     epochs = 100
     use_checkpoint = 0
 
@@ -227,22 +220,14 @@ if __name__ == '__main__':
     # train_path = data_dir + '/test.ref.update'
     # test_path = data_dir + '/test.ref.update'
 
-    # 将序列均分成p段，记录k-mer来自哪些段，这样相当于包含了k-mer的位置信息
-    p = 50
-
-    # Step 1: 加载repbase数据。将序列划分成internal_seq, LTR, TIR，TSD四个部分，分别用k=5, 4, 3频次表示internal_seq, LTR, TIR;TSD用one-hot编码表示，用多1位表示TSD_length;将domain转为One-hot编码
-    kmer_sizes = [3, 3, 3]
+    # Step 1: 加载repbase数据。将序列划分成seq, LTR, TIR，TSD四个部分，分别用k=5, 4, 3频次表示seq, LTR, TIR;TSD用one-hot编码表示，用多1位表示TSD_length;将domain转为One-hot编码
+    kmer_sizes = [5, 5, 5]
     X_feature_len = 11 * 4 + 1 + 29
-    #X_feature_len = 29
-    # for kmer_size in kmer_sizes:
-    #     X_feature_len += pow(4, kmer_size)
-
-    # 目前只将internal_seq和LTR的k-mer生成位置信息
-    for i, kmer_size in enumerate(kmer_sizes):
-        X_feature_len += pow(4, kmer_size) * p
+    for kmer_size in kmer_sizes:
+        X_feature_len += pow(4, kmer_size)
 
     X, Y, seq_names = load_repbase_with_TSD(train_path, domain_train_path, all_wicker_class)
-    X, Y = generate_feature_mats(X, Y, seq_names, all_wicker_class, kmer_sizes, threads, p)
+    X, Y = generate_feature_mats(X, Y, seq_names, all_wicker_class, kmer_sizes, threads)
 
 
     # Step 3: 抽取训练集的20%当做验证集
@@ -268,7 +253,7 @@ if __name__ == '__main__':
 
     # 测试集
     X_test, Y_test, Y_test_name = load_repbase_with_TSD(test_path, domain_test_path, all_wicker_class)
-    X_test, Y_test = generate_feature_mats(X_test, Y_test, Y_test_name, all_wicker_class, kmer_sizes, threads, p)
+    X_test, Y_test = generate_feature_mats(X_test, Y_test, Y_test_name, all_wicker_class, kmer_sizes, threads)
     X_test = X_test.reshape(X_test.shape[0], X_feature_len, 1)
     X_test = X_test.astype('float64')
     Y_test_one_hot = np_utils.to_categorical(Y_test, int(class_num))

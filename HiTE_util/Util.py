@@ -441,8 +441,63 @@ def search_confident_tsd(orig_seq, raw_tir_start, raw_tir_end, tsd_search_distan
 def replace_non_atcg(sequence):
     return re.sub("[^ATCG]", "", sequence)
 
-def load_repbase_with_TSD(path):
-    #提取特征太慢了，我们使用多进程去加速
+def getRMToWicker():
+    # 3.2 将Dfam分类名称转成wicker格式
+    ## 3.2.1 这个文件里包含了RepeatMasker类别、Repbase、wicker类别的转换
+    rmToWicker = {}
+    wicker_superfamily_set = set()
+    with open('TEClasses.tsv', 'r') as f_r:
+        for i, line in enumerate(f_r):
+            parts = line.split('\t')
+            rm_type = parts[5]
+            rm_subtype = parts[6]
+            repbase_type = parts[7]
+            wicker_type = parts[8]
+            wicker_type_parts = wicker_type.split('/')
+            # print(rm_type + ',' + rm_subtype + ',' + repbase_type + ',' + wicker_type)
+            # if len(wicker_type_parts) != 3:
+            #     continue
+            wicker_superfamily_parts = wicker_type_parts[-1].strip().split(' ')
+            if len(wicker_superfamily_parts) == 1:
+                wicker_superfamily = wicker_superfamily_parts[0]
+            elif len(wicker_superfamily_parts) > 1:
+                wicker_superfamily = wicker_superfamily_parts[1].replace('(', '').replace(')', '')
+            rm_full_type = rm_type + '/' + rm_subtype
+            if wicker_superfamily == 'ERV':
+                wicker_superfamily = 'Retrovirus'
+            rmToWicker[rm_full_type] = wicker_superfamily
+            wicker_superfamily_set.add(wicker_superfamily)
+    # 补充一些元素
+    rmToWicker['LINE/R2'] = 'R2'
+    rmToWicker['LINE/RTE'] = 'RTE'
+    rmToWicker['LTR/ERVL'] = 'Retrovirus'
+    rmToWicker['LTR/Ngaro'] = 'DIRS'
+    return rmToWicker
+
+def load_repbase_with_TSD(path, domain_path, all_wicker_class):
+    rmToWicker = getRMToWicker()
+    name_labels = {}
+    # 加载domain文件，读取TE包含的domain标签
+    with open(domain_path, 'r') as f_r:
+        for i, line in enumerate(f_r):
+            if i < 2:
+                continue
+            parts = line.split('\t')
+            TE_name = parts[0]
+            label = parts[1].split('#')[1]
+            if not rmToWicker.__contains__(label):
+                label = 'Unknown'
+            else:
+                wicker_superfamily = rmToWicker[label]
+                label = wicker_superfamily
+                if not all_wicker_class.__contains__(label):
+                    label = 'Unknown'
+            if not name_labels.__contains__(TE_name):
+                name_labels[TE_name] = set()
+            label_set = name_labels[TE_name]
+            label_set.add(label)
+
+
     names, contigs = read_fasta_v1(path)
     X = []
     Y = {}
@@ -458,9 +513,14 @@ def load_repbase_with_TSD(path):
         TIR_info = parts[6]
         # LTR_info = parts[3]
         # TIR_info = parts[4]
+        if name_labels.__contains__(seq_name):
+            domain_label_set = name_labels[seq_name]
+        else:
+            domain_label_set = {'Unknown'}
         seq = contigs[name]
         seq = replace_non_atcg(seq)  # undetermined nucleotides in splice
-        x_feature = (seq_name, seq, TSD_seq, TSD_len, LTR_info, TIR_info)
+        x_feature = (seq_name, seq, TSD_seq, TSD_len, LTR_info, TIR_info, domain_label_set)
+        #x_feature = (seq_name, seq, LTR_info, TIR_info, domain_label_set)
         X.append(x_feature)
         Y[seq_name] = label
         # y_feature = (seq_name, label)
@@ -497,6 +557,62 @@ def generate_mat(words_list,kmer_dic):
     for eachkmer in kmer_dic:
         num_list.append(kmer_dic[eachkmer])
     return (num_list)
+
+
+def split_and_track_kmers(sequence, p, k):
+    # 将序列补齐，让其变成p的整数倍
+    remainder = len(sequence) % p
+    part_size = len(sequence) // p
+    if remainder != 0:
+        padded_sequence = "N" * ((part_size + 1) * p - len(sequence))
+    else:
+        padded_sequence = ''
+    sequence += padded_sequence
+
+    seq_len = len(sequence)
+    part_size = seq_len // p
+    part_endpoints = [i * part_size for i in range(1, p+1)]
+
+    kmer_records = {}
+    current_part = 0
+    for i in range(0, seq_len - k + 1):
+        if i >= part_endpoints[-1]:
+            break
+        kmer = sequence[i:i+k]
+        if i >= part_endpoints[current_part]:
+            current_part += 1
+        if not kmer_records.__contains__(kmer):
+            kmer_records[kmer] = []
+        current_parts = kmer_records[kmer]
+        current_parts.append(current_part)
+    return part_endpoints, kmer_records
+
+def get_kmer_freq_pos_info(sequence, p, k):
+    # Step1: 记录每个k-mer出现的频次
+    # 生成4^k个不同的k-mer
+    kmer_dic = generate_kmer_dic(k)
+    # 记录每个k-mer在序列中出现的频次
+    words_list = word_seq(sequence, k, stride=1)
+    for eachword in words_list:
+        kmer_dic[eachword] += 1
+
+    # Step2: 将序列均分成p块，并记录每个k-mer出现在第几块过，这是一个位置列表。将k-mer频次乘上位置列表，得到一个包含位置信息和频率的矩阵。
+    part_endpoints, kmer_records = split_and_track_kmers(sequence, p, k)
+    flatten_kmer_pos_encoder = []
+    kmer_pos_encoder = {}
+    # 将每个kmer出现在哪一段用one-hot编码表示，一共是p段，那么数组长度为p
+    for kmer in kmer_dic:
+        if kmer_records.__contains__(kmer):
+            current_parts = kmer_records[kmer]
+        else:
+            current_parts = []
+        pos_encoder = [0] * p
+        for i in current_parts:
+            pos_encoder[i] = 1
+        freq_pos_encoder = [x * kmer_dic[kmer] for x in pos_encoder]
+        kmer_pos_encoder[kmer] = freq_pos_encoder
+        flatten_kmer_pos_encoder = np.concatenate((flatten_kmer_pos_encoder, freq_pos_encoder))
+    return kmer_pos_encoder, flatten_kmer_pos_encoder
 
 def get_batch_kmer_freq(grouped_x, kmer_sizes):
     group_dict = {}
@@ -540,7 +656,7 @@ def get_batch_kmer_freq(grouped_x, kmer_sizes):
         group_dict[seq_name] = connected_list
     return group_dict
 
-def get_batch_kmer_freq_v1(grouped_x, kmer_sizes):
+def get_batch_kmer_freq_v1(grouped_x, kmer_sizes, all_wicker_class, p):
     group_dict = {}
     for x in grouped_x:
         # 将序列拆分成internal_Seq, LTR, TIR三块组成
@@ -550,8 +666,10 @@ def get_batch_kmer_freq_v1(grouped_x, kmer_sizes):
         TSD_len = x[3]
         LTR_pos = x[4]
         TIR_pos = x[5]
+        domain_label_set = x[6]
         # LTR_pos = x[2]
         # TIR_pos = x[3]
+        # domain_label_set = x[4]
         # 获取LTR序列，以及内部序列。如果同时存在LTR和TIR，取LTR的内部序列（因为LTR相对更长，更可靠）
         internal_seq = ''
         LTR_seq = ''
@@ -577,30 +695,44 @@ def get_batch_kmer_freq_v1(grouped_x, kmer_sizes):
             LTR_seq = seq[left_LTR_start-1: left_LTR_end]
             internal_seq = seq[left_LTR_end: right_LTR_start-1]
 
-        # 将internal_seq，LTR，TIR表示成kmer频次
+        # 将internal_seq，LTR表示成kmer频次和位置信息
         connected_num_list = []
         kmer_size = kmer_sizes[0]
-        words_list = word_seq(internal_seq, kmer_size, stride=1)
-        kmer_dic = generate_kmer_dic(kmer_size)
-        num_list = generate_mat(words_list, kmer_dic)
-        connected_num_list = np.concatenate((connected_num_list, num_list))
+        kmer_pos_encoder, flatten_kmer_pos_encoder = get_kmer_freq_pos_info(internal_seq, p, kmer_size)
+        connected_num_list = np.concatenate((connected_num_list, flatten_kmer_pos_encoder))
 
         kmer_size = kmer_sizes[1]
-        words_list = word_seq(LTR_seq, kmer_size, stride=1)
-        kmer_dic = generate_kmer_dic(kmer_size)
-        num_list = generate_mat(words_list, kmer_dic)
-        connected_num_list = np.concatenate((connected_num_list, num_list))
+        kmer_pos_encoder, flatten_kmer_pos_encoder = get_kmer_freq_pos_info(LTR_seq, p, kmer_size)
+        connected_num_list = np.concatenate((connected_num_list, flatten_kmer_pos_encoder))
 
         kmer_size = kmer_sizes[2]
-        words_list = word_seq(TIR_seq, kmer_size, stride=1)
-        kmer_dic = generate_kmer_dic(kmer_size)
-        num_list = generate_mat(words_list, kmer_dic)
+        kmer_pos_encoder, flatten_kmer_pos_encoder = get_kmer_freq_pos_info(TIR_seq, p, kmer_size)
+        connected_num_list = np.concatenate((connected_num_list, flatten_kmer_pos_encoder))
 
-        num_list.append(TSD_len)
-        connected_num_list = np.concatenate((connected_num_list, num_list))
-        #group_dict[seq_name] = connected_num_list
+        # # 将internal_seq，LTR，TIR表示成kmer频次
+        # connected_num_list = []
+        # kmer_size = kmer_sizes[0]
+        # words_list = word_seq(internal_seq, kmer_size, stride=1)
+        # kmer_dic = generate_kmer_dic(kmer_size)
+        # num_list = generate_mat(words_list, kmer_dic)
+        # connected_num_list = np.concatenate((connected_num_list, num_list))
+        #
+        # kmer_size = kmer_sizes[1]
+        # words_list = word_seq(LTR_seq, kmer_size, stride=1)
+        # kmer_dic = generate_kmer_dic(kmer_size)
+        # num_list = generate_mat(words_list, kmer_dic)
+        # connected_num_list = np.concatenate((connected_num_list, num_list))
+        #
+        # kmer_size = kmer_sizes[2]
+        # words_list = word_seq(TIR_seq, kmer_size, stride=1)
+        # kmer_dic = generate_kmer_dic(kmer_size)
+        # num_list = generate_mat(words_list, kmer_dic)
+        # connected_num_list = np.concatenate((connected_num_list, num_list))
 
-        # 将TSD序列转成one-hot编码
+        # TSD_len
+        connected_num_list = np.append(connected_num_list, TSD_len)
+
+        # 将TSD转成one-hot编码
         encoder = np.eye(4, dtype=np.int8)
         max_length = 11
         padding_length = max_length - len(TSD_seq)
@@ -617,21 +749,41 @@ def get_batch_kmer_freq_v1(grouped_x, kmer_sizes):
         for i in range(padding_length):
             encoded_TSD[len(TSD_seq) + i] = np.zeros(4)
         onehot_encoded_flat = encoded_TSD.reshape(-1)
-        connected_list = np.concatenate((connected_num_list, onehot_encoded_flat))
-        group_dict[seq_name] = connected_list
+        connected_num_list = np.concatenate((connected_num_list, onehot_encoded_flat))
+
+        # 将domain set转成one-hot编码
+        encoder = [0] * 29
+        for domain_label in domain_label_set:
+            if domain_label == 'Unknown':
+                domain_label_num = 28
+            else:
+                domain_label_num = all_wicker_class[domain_label]
+            encoder[domain_label_num] = 1
+        connected_num_list = np.concatenate((connected_num_list, encoder))
+
+        # # 将domain标签转成one-hot编码
+        # encoder = np.eye(len(all_wicker_class) + 1, dtype=np.int8)
+        # if domain_label == 'Unknown':
+        #     domain_label_num = 28
+        # else:
+        #     domain_label_num = all_wicker_class[domain_label]
+        # encoded_domain = encoder[domain_label_num]
+        # connected_list = np.concatenate((connected_list, encoded_domain))
+
+        group_dict[seq_name] = connected_num_list
     return group_dict
 
 def split_list_into_groups(lst, group_size):
     return [lst[i:i+group_size] for i in range(0, len(lst), group_size)]
 
-def generate_feature_mats(X, Y, seq_names, all_wicker_class, kmer_sizes, threads):
+def generate_feature_mats(X, Y, seq_names, all_wicker_class, kmer_sizes, threads, p):
     seq_mats = {}
     ex = ProcessPoolExecutor(threads)
     jobs = []
     grouped_X = split_list_into_groups(X, 100)
 
     for grouped_x in grouped_X:
-        job = ex.submit(get_batch_kmer_freq_v1, grouped_x, kmer_sizes)
+        job = ex.submit(get_batch_kmer_freq_v1, grouped_x, kmer_sizes, all_wicker_class, p)
         jobs.append(job)
     ex.shutdown(wait=True)
 
@@ -757,3 +909,331 @@ def pad_string_to_max_length(input_string, max_length, padding_char='B'):
         return input_string
     else:
         return input_string.ljust(max_length, padding_char)
+
+def store2file(data_partition, cur_consensus_path):
+    if len(data_partition) > 0:
+        with open(cur_consensus_path, 'w') as f_save:
+            for item in data_partition:
+                f_save.write('>'+item[0]+'\n'+item[1]+'\n')
+        f_save.close()
+
+def PET(seq_item, partitions):
+    # sort contigs by length
+    original = seq_item
+    original = sorted(original, key=lambda x: len(x[1]), reverse=True)
+    return divided_array(original, partitions)
+
+def divided_array(original_array, partitions):
+    final_partitions = [[] for _ in range(partitions)]
+    node_index = 0
+
+    read_from_start = True
+    read_from_end = False
+    i = 0
+    j = len(original_array) - 1
+    while i <= j:
+        # read from file start
+        if read_from_start:
+            final_partitions[node_index % partitions].append(original_array[i])
+            i += 1
+        if read_from_end:
+            final_partitions[node_index % partitions].append(original_array[j])
+            j -= 1
+        node_index += 1
+        if node_index % partitions == 0:
+            # reverse
+            read_from_end = bool(1 - read_from_end)
+            read_from_start = bool(1 - read_from_start)
+    return final_partitions
+
+def get_domain_info(cons, lib, output_table, threads, temp_dir):
+    if not os.path.exists(temp_dir):
+        os.makedirs(temp_dir)
+    # 1. 将cons进行划分，每一块利用blastx -num_threads 1 -evalue 1e-20 进行cons与domain进行比对
+    partitions_num = int(threads)
+    consensus_contignames, consensus_contigs = read_fasta(cons)
+    data_partitions = PET(consensus_contigs.items(), partitions_num)
+    merge_distance = 100
+    file_list = []
+    ex = ProcessPoolExecutor(threads)
+    jobs = []
+    for partition_index, data_partition in enumerate(data_partitions):
+        if len(data_partition) <= 0:
+            continue
+        cur_consensus_path = temp_dir + '/'+str(partition_index)+'.fa'
+        store2file(data_partition, cur_consensus_path)
+        cur_output = temp_dir + '/'+str(partition_index)+'.out'
+        cur_table = temp_dir + '/' + str(partition_index) + '.tbl'
+        cur_file = (cur_consensus_path, lib, cur_output, cur_table)
+        job = ex.submit(multiple_alignment_blastx_v1, cur_file, merge_distance)
+        jobs.append(job)
+    ex.shutdown(wait=True)
+
+    # 2. 生成一个query与domain的最佳比对表
+    os.system("echo 'TE_name\tdomain_name\tTE_start\tTE_end\tdomain_start\tdomain_end\n' > " + output_table)
+    for job in as_completed(jobs):
+        cur_table = job.result()
+        os.system('cat ' + cur_table + ' >> ' + output_table)
+
+def multiple_alignment_blastx_v1(repeats_path, merge_distance):
+    split_repeats_path = repeats_path[0]
+    protein_db_path = repeats_path[1]
+    blastx2Results_path = repeats_path[2]
+    cur_table = repeats_path[3]
+    align_command = 'blastx -db ' + protein_db_path + ' -num_threads ' \
+                    + str(1) + ' -evalue 1e-20 -query ' + split_repeats_path + ' -outfmt 6 > ' + blastx2Results_path
+    os.system(align_command)
+
+    fixed_extend_base_threshold = merge_distance
+    # 将分段的blastx比对合并起来
+    query_names, query_contigs = read_fasta(split_repeats_path)
+
+    # parse blastn output, determine the repeat boundary
+    # query_records = {query_name: {subject_name: [(q_start, q_end, s_start, s_end), (q_start, q_end, s_start, s_end), (q_start, q_end, s_start, s_end)] }}
+    query_records = {}
+    with open(blastx2Results_path, 'r') as f_r:
+        for idx, line in enumerate(f_r):
+            # print('current line idx: %d' % (idx))
+            parts = line.split('\t')
+            query_name = parts[0]
+            subject_name = parts[1]
+            identity = float(parts[2])
+            alignment_len = int(parts[3])
+            q_start = int(parts[6])
+            q_end = int(parts[7])
+            s_start = int(parts[8])
+            s_end = int(parts[9])
+            if not query_records.__contains__(query_name):
+                query_records[query_name] = {}
+            subject_dict = query_records[query_name]
+
+            if not subject_dict.__contains__(subject_name):
+                subject_dict[subject_name] = []
+            subject_pos = subject_dict[subject_name]
+            subject_pos.append((q_start, q_end, s_start, s_end))
+    f_r.close()
+
+    keep_longest_query = {}
+    longest_repeats = {}
+    for idx, query_name in enumerate(query_records.keys()):
+        query_len = len(query_contigs[query_name])
+        # print('total query size: %d, current query name: %s, idx: %d' % (len(query_records), query_name, idx))
+
+        subject_dict = query_records[query_name]
+
+        # if there are more than one longest query overlap with the final longest query over 90%,
+        # then it probably the true TE
+        longest_queries = []
+        for subject_name in subject_dict.keys():
+            subject_pos = subject_dict[subject_name]
+            # subject_pos.sort(key=lambda x: (x[2], x[3]))
+
+            # cluster all closed fragments, split forward and reverse records
+            forward_pos = []
+            reverse_pos = []
+            for pos_item in subject_pos:
+                if pos_item[0] > pos_item[1]:
+                    reverse_pos.append(pos_item)
+                else:
+                    forward_pos.append(pos_item)
+            forward_pos.sort(key=lambda x: (x[2], x[3]))
+            reverse_pos.sort(key=lambda x: (-x[0], -x[1]))
+
+            clusters = {}
+            cluster_index = 0
+            for k, frag in enumerate(forward_pos):
+                if not clusters.__contains__(cluster_index):
+                    clusters[cluster_index] = []
+                cur_cluster = clusters[cluster_index]
+                if k == 0:
+                    cur_cluster.append(frag)
+                else:
+                    is_closed = False
+                    for exist_frag in reversed(cur_cluster):
+                        if (frag[0] - exist_frag[1] < fixed_extend_base_threshold):
+                            is_closed = True
+                            break
+                    if is_closed:
+                        cur_cluster.append(frag)
+                    else:
+                        cluster_index += 1
+                        if not clusters.__contains__(cluster_index):
+                            clusters[cluster_index] = []
+                        cur_cluster = clusters[cluster_index]
+                        cur_cluster.append(frag)
+
+            cluster_index += 1
+            for k, frag in enumerate(reverse_pos):
+                if not clusters.__contains__(cluster_index):
+                    clusters[cluster_index] = []
+                cur_cluster = clusters[cluster_index]
+                if k == 0:
+                    cur_cluster.append(frag)
+                else:
+                    is_closed = False
+                    for exist_frag in reversed(cur_cluster):
+                        if (exist_frag[1] - frag[0] < fixed_extend_base_threshold):
+                            is_closed = True
+                            break
+                    if is_closed:
+                        cur_cluster.append(frag)
+                    else:
+                        cluster_index += 1
+                        if not clusters.__contains__(cluster_index):
+                            clusters[cluster_index] = []
+                        cur_cluster = clusters[cluster_index]
+                        cur_cluster.append(frag)
+
+            for cluster_index in clusters.keys():
+                cur_cluster = clusters[cluster_index]
+                cur_cluster.sort(key=lambda x: (x[2], x[3]))
+
+                cluster_longest_query_start = -1
+                cluster_longest_query_end = -1
+                cluster_longest_query_len = -1
+
+                cluster_longest_subject_start = -1
+                cluster_longest_subject_end = -1
+                cluster_longest_subject_len = -1
+
+                cluster_extend_num = 0
+
+                # print('subject pos size: %d' %(len(cur_cluster)))
+                # record visited fragments
+                visited_frag = {}
+                for i in range(len(cur_cluster)):
+                    # keep a longest query start from each fragment
+                    origin_frag = cur_cluster[i]
+                    if visited_frag.__contains__(origin_frag):
+                        continue
+                    cur_frag_len = abs(origin_frag[1] - origin_frag[0])
+                    cur_longest_query_len = cur_frag_len
+                    longest_query_start = origin_frag[0]
+                    longest_query_end = origin_frag[1]
+                    longest_subject_start = origin_frag[2]
+                    longest_subject_end = origin_frag[3]
+
+                    cur_extend_num = 0
+
+                    visited_frag[origin_frag] = 1
+                    # try to extend query
+                    for j in range(i + 1, len(cur_cluster)):
+                        ext_frag = cur_cluster[j]
+                        if visited_frag.__contains__(ext_frag):
+                            continue
+
+                        # could extend
+                        # extend right
+                        if ext_frag[3] > longest_subject_end:
+                            # judge query direction
+                            if longest_query_start < longest_query_end and ext_frag[0] < ext_frag[1]:
+                                # +
+                                if ext_frag[1] > longest_query_end:
+                                    # forward extend
+                                    if ext_frag[0] - longest_query_end < fixed_extend_base_threshold and ext_frag[
+                                        2] - longest_subject_end < fixed_extend_base_threshold / 3:
+                                        # update the longest path
+                                        longest_query_start = longest_query_start
+                                        longest_query_end = ext_frag[1]
+                                        longest_subject_start = longest_subject_start if longest_subject_start < \
+                                                                                         ext_frag[
+                                                                                             2] else ext_frag[2]
+                                        longest_subject_end = ext_frag[3]
+                                        cur_longest_query_len = longest_query_end - longest_query_start
+                                        cur_extend_num += 1
+                                        visited_frag[ext_frag] = 1
+                                    elif ext_frag[0] - longest_query_end >= fixed_extend_base_threshold:
+                                        break
+                            elif longest_query_start > longest_query_end and ext_frag[0] > ext_frag[1]:
+                                # reverse
+                                if ext_frag[1] < longest_query_end:
+                                    # reverse extend
+                                    if longest_query_end - ext_frag[0] < fixed_extend_base_threshold and ext_frag[
+                                        2] - longest_subject_end < fixed_extend_base_threshold / 3:
+                                        # update the longest path
+                                        longest_query_start = longest_query_start
+                                        longest_query_end = ext_frag[1]
+                                        longest_subject_start = longest_subject_start if longest_subject_start < \
+                                                                                         ext_frag[
+                                                                                             2] else ext_frag[2]
+                                        longest_subject_end = ext_frag[3]
+                                        cur_longest_query_len = longest_query_start - longest_query_end
+                                        cur_extend_num += 1
+                                        visited_frag[ext_frag] = 1
+                                    elif longest_query_end - ext_frag[0] >= fixed_extend_base_threshold:
+                                        break
+                    if cur_longest_query_len > cluster_longest_query_len:
+                        cluster_longest_query_start = longest_query_start
+                        cluster_longest_query_end = longest_query_end
+                        cluster_longest_query_len = cur_longest_query_len
+
+                        cluster_longest_subject_start = longest_subject_start
+                        cluster_longest_subject_end = longest_subject_end
+                        cluster_longest_subject_len = longest_subject_end - longest_subject_start
+
+                        cluster_extend_num = cur_extend_num
+                # keep this longest query
+                if cluster_longest_query_len != -1:
+                    longest_queries.append((cluster_longest_query_start, cluster_longest_query_end,
+                                            cluster_longest_query_len, cluster_longest_subject_start,
+                                            cluster_longest_subject_end, cluster_longest_subject_len, subject_name,
+                                            cluster_extend_num))
+
+        # we now consider, we should take some sequences from longest_queries to represent this query sequence.
+        # we take the longest sequence by length, if the latter sequence overlap with the former sequence largely (50%),
+        # continue find next sequence until the ratio of query sequence over 90% or no more sequences.
+        longest_queries.sort(key=lambda x: -x[2])
+        keep_longest_query[query_name] = longest_queries
+    # print(keep_longest_query)
+    # 记录存成table,去掉冗余记录（后一条序列的50%以上的区域在前一条内）
+    with open(cur_table, 'w') as f_save:
+        for query_name in keep_longest_query.keys():
+            domain_array = keep_longest_query[query_name]
+            # for domain_info in domain_array:
+            #     f_save.write(query_name+'\t'+str(domain_info[6])+'\t'+str(domain_info[0])+'\t'+str(domain_info[1])+'\t'+str(domain_info[3])+'\t'+str(domain_info[4])+'\n')
+            merge_domains = []
+            # 对domain_array进行合并
+            domain_array.sort(key=lambda x: -x[2])
+            for domain_info in domain_array:
+                if len(merge_domains) == 0:
+                    merge_domains.append(domain_info)
+                else:
+                    is_new_domain = True
+                    for pre_domain in merge_domains:
+                        pre_start = pre_domain[0]
+                        pre_end = pre_domain[1]
+                        # 计算overlap
+                        if pre_start > pre_end:
+                            tmp = pre_start
+                            pre_start = pre_end
+                            pre_end = tmp
+                        cur_start = domain_info[0]
+                        cur_end = domain_info[1]
+                        if cur_start > cur_end:
+                            tmp = cur_start
+                            cur_start = cur_end
+                            cur_end = tmp
+                        if cur_end >= pre_start and cur_end <= pre_end:
+                            if cur_start <= pre_start:
+                                overlap = cur_end - pre_start
+                            else:
+                                overlap = cur_end - cur_start
+                        elif cur_end > pre_end:
+                            if cur_start >= pre_start and cur_start <= pre_end:
+                                overlap = pre_end - cur_start
+                            else:
+                                overlap = 0
+                        else:
+                            overlap = 0
+
+                        if float(overlap / domain_info[2]) > 0.5:
+                            is_new_domain = False
+                    if is_new_domain:
+                        merge_domains.append(domain_info)
+
+            for domain_info in merge_domains:
+                f_save.write(query_name + '\t' + str(domain_info[6]) + '\t' + str(domain_info[0]) + '\t' + str(
+                    domain_info[1]) + '\t' + str(domain_info[3]) + '\t' + str(domain_info[4]) + '\n')
+
+    f_save.close()
+    return cur_table

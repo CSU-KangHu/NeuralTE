@@ -28,3 +28,4 @@ if __name__ == '__main__':
     print(error_predict_names['Copia'])
     print(error_predict_names['PIF-Harbinger'])
     print(error_predict_names['Mutator'])
+    print(error_predict_names['L1'])

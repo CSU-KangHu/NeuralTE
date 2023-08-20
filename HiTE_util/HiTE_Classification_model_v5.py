@@ -149,8 +149,8 @@ if __name__ == '__main__':
 
     # Step 2: 将Repbase序列和TSD数据， 以及label 转换成特征
     threads = 40
-    data_dir = '/home/hukang/HiTE_Classification/data'
-    #data_dir = '/public/home/hpc194701009/TE_Classification/HiTE_Classification/data'
+    data_dir = '/home/hukang/NeuralTE/data'
+    #data_dir = '/public/home/hpc194701009/TE_Classification/NeuralTE/data'
     train_path = data_dir + '/repbase_train_part.64.ref.update'
     test_path = data_dir + '/repbase_test_part.64.ref.update'
 

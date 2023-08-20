@@ -417,7 +417,7 @@ if __name__ == '__main__':
     #         os.system('mv ' + final_repbase_path + ' ' + processed_species_dir)
 
     # 统计训练集和测试集中不同TE类别的数量
-    work_dir = '/home/hukang/HiTE_Classification/data'
+    work_dir = '/home/hukang/NeuralTE/data'
     train_path = work_dir + '/repbase_train.ref'
     test_path = work_dir + '/repbase_test.ref'
     train_names, train_contigs = read_fasta_v1(train_path)

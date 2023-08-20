@@ -154,7 +154,7 @@ def connect_LTR(repbase_path):
 
 
 if __name__ == '__main__':
-    data_dir = '/home/hukang/HiTE_Classification/data'
+    data_dir = '/home/hukang/NeuralTE/data'
     output_dir = data_dir + '/temp'
     #filenames = ['repbase_train_part.64.ref', 'repbase_test_part.64.ref']
     filenames = ['all_repbase.ref']

@@ -8,6 +8,8 @@ dependencies:
   - tensorflow-gpu=1.14.0
   - biopython
   - keras=2.2.4
-  - numpy=1.16.0
+  - numpy=1.23.4
   - scikit-learn
+  - matplotlib
+  - seaborn
 
