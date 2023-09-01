@@ -513,8 +513,12 @@ def load_repbase_with_TSD(path, domain_path, all_wicker_class):
         TIR_info = parts[6]
         # LTR_info = parts[3]
         # TIR_info = parts[4]
-        if name_labels.__contains__(seq_name):
-            domain_label_set = name_labels[seq_name]
+        if seq_name.endswith('-RC'):
+            raw_seq_name = seq_name[:-3]
+        else:
+            raw_seq_name = seq_name
+        if name_labels.__contains__(raw_seq_name):
+            domain_label_set = name_labels[raw_seq_name]
         else:
             domain_label_set = {'Unknown'}
         seq = contigs[name]
@@ -599,7 +603,7 @@ def get_kmer_freq_pos_info(sequence, p, k):
     # Step2: 将序列均分成p块，并记录每个k-mer出现在第几块过，这是一个位置列表。将k-mer频次乘上位置列表，得到一个包含位置信息和频率的矩阵。
     part_endpoints, kmer_records = split_and_track_kmers(sequence, p, k)
     flatten_kmer_pos_encoder = []
-    kmer_pos_encoder = {}
+    kmer_pos_encoder = []
     # 将每个kmer出现在哪一段用one-hot编码表示，一共是p段，那么数组长度为p
     for kmer in kmer_dic:
         if kmer_records.__contains__(kmer):
@@ -610,7 +614,7 @@ def get_kmer_freq_pos_info(sequence, p, k):
         for i in current_parts:
             pos_encoder[i] = 1
         freq_pos_encoder = [x * kmer_dic[kmer] for x in pos_encoder]
-        kmer_pos_encoder[kmer] = freq_pos_encoder
+        kmer_pos_encoder.append(freq_pos_encoder)
         flatten_kmer_pos_encoder = np.concatenate((flatten_kmer_pos_encoder, freq_pos_encoder))
     return kmer_pos_encoder, flatten_kmer_pos_encoder
 
@@ -656,7 +660,159 @@ def get_batch_kmer_freq(grouped_x, kmer_sizes):
         group_dict[seq_name] = connected_list
     return group_dict
 
-def get_batch_kmer_freq_v1(grouped_x, kmer_sizes, all_wicker_class, p):
+def get_batch_kmer_freq_v1(grouped_x, kmer_sizes, all_wicker_class):
+    # 构建碱基序列词汇表和反向词汇表
+    base_vocab = {'A': 1, 'T': 2, 'C': 3, 'G': 4}
+
+    group_dict = {}
+    for x in grouped_x:
+        # 将序列拆分成internal_Seq, LTR, TIR三块组成
+        seq_name = x[0]
+        seq = x[1]
+        TSD_seq = x[2]
+        TSD_len = x[3]
+        LTR_pos = x[4]
+        TIR_pos = x[5]
+        domain_label_set = x[6]
+        # LTR_pos = x[2]
+        # TIR_pos = x[3]
+        # domain_label_set = x[4]
+        # 获取LTR序列，以及内部序列。如果同时存在LTR和TIR，取LTR的内部序列（因为LTR相对更长，更可靠）
+        internal_seq = ''
+        LTR_seq = ''
+        TIR_seq = ''
+        LTR_pos_str = str(LTR_pos.split(':')[1]).strip()
+        TIR_pos_str = str(TIR_pos.split(':')[1]).strip()
+        if LTR_pos_str == '' and TIR_pos_str == '':
+            internal_seq = seq
+        if TIR_pos_str != '':
+            TIR_parts = TIR_pos_str.split(',')
+            left_TIR_start = int(TIR_parts[0].split('-')[0])
+            left_TIR_end = int(TIR_parts[0].split('-')[1])
+            right_TIR_start = int(TIR_parts[1].split('-')[0])
+            right_TIR_end = int(TIR_parts[1].split('-')[1])
+            TIR_seq = seq[left_TIR_start-1: left_TIR_end]
+            internal_seq = seq[left_TIR_end: right_TIR_start-1]
+
+            # 尝试只取前60 bp的TIR 序列
+            TIR_seq = TIR_seq[0: 60]
+        if LTR_pos_str != '':
+            LTR_parts = LTR_pos_str.split(',')
+            left_LTR_start = int(LTR_parts[0].split('-')[0])
+            left_LTR_end = int(LTR_parts[0].split('-')[1])
+            right_LTR_start = int(LTR_parts[1].split('-')[0])
+            right_LTR_end = int(LTR_parts[1].split('-')[1])
+            LTR_seq = seq[left_LTR_start-1: left_LTR_end]
+            internal_seq = seq[left_LTR_end: right_LTR_start-1]
+
+        # 将internal_seq，LTR表示成kmer频次和位置信息
+        connected_num_list = []
+        for kmer_size in kmer_sizes:
+            # words_list = word_seq(seq, kmer_size, stride=1)
+            # kmer_dic = generate_kmer_dic(kmer_size)
+            # num_list = generate_mat(words_list, kmer_dic)
+            # connected_num_list += num_list
+
+            # 将internal_seq，LTR，TIR表示成kmer频次
+            words_list = word_seq(internal_seq, kmer_size, stride=1)
+            kmer_dic = generate_kmer_dic(kmer_size)
+            num_list = generate_mat(words_list, kmer_dic)
+            connected_num_list += num_list
+
+            words_list = word_seq(LTR_seq, kmer_size, stride=1)
+            kmer_dic = generate_kmer_dic(kmer_size)
+            num_list = generate_mat(words_list, kmer_dic)
+            connected_num_list += num_list
+
+            words_list = word_seq(TIR_seq, kmer_size, stride=1)
+            kmer_dic = generate_kmer_dic(kmer_size)
+            num_list = generate_mat(words_list, kmer_dic)
+            connected_num_list += num_list
+
+        # # 将TIR碱基序列转换为数字表示
+        # max_seq_length = 60
+        # sequences_encoded = []
+        # for i, base in enumerate(TIR_seq):
+        #     base_num = base_vocab[base]
+        #     sequences_encoded.append(base_num)
+        #     if len(sequences_encoded) >= max_seq_length:
+        #         break
+        # # 将序列填充到相同长度
+        # padding_length = max_seq_length - len(TIR_seq)
+        # if padding_length > 0:
+        #     for i in range(padding_length):
+        #         sequences_encoded.append(0)
+
+        # TSD_len
+        connected_num_list.append(TSD_len)
+
+        # 将TSD转成one-hot编码
+        encoder = np.eye(4, dtype=np.int8)
+        max_length = 11
+        encoded_TSD = np.zeros((max_length, 4), dtype=np.int8)
+        if TSD_seq == 'unknown' or 'N' in TSD_seq:
+            TSD_seq = ''
+        padding_length = max_length - len(TSD_seq)
+        for i, base in enumerate(TSD_seq):
+            if base == 'A':
+                encoded_TSD[i] = encoder[0]
+            elif base == 'T':
+                encoded_TSD[i] = encoder[1]
+            elif base == 'C':
+                encoded_TSD[i] = encoder[2]
+            elif base == 'G':
+                encoded_TSD[i] = encoder[3]
+        for i in range(padding_length):
+            encoded_TSD[len(TSD_seq) + i] = np.zeros(4)
+        onehot_encoded_flat = encoded_TSD.reshape(-1)
+        connected_num_list = np.concatenate((connected_num_list, onehot_encoded_flat))
+
+        # 取序列的首尾各5bp，形成一个10bp的向量
+        end_seq = seq[:5] + seq[-5:]
+        # 将end_seq转成one-hot编码
+        encoder = np.eye(4, dtype=np.int8)
+        max_length = 10
+        encoded_end_seq = np.zeros((max_length, 4), dtype=np.int8)
+        for i, base in enumerate(end_seq):
+            if base == 'A':
+                encoded_end_seq[i] = encoder[0]
+            elif base == 'T':
+                encoded_end_seq[i] = encoder[1]
+            elif base == 'C':
+                encoded_end_seq[i] = encoder[2]
+            elif base == 'G':
+                encoded_end_seq[i] = encoder[3]
+        onehot_encoded_flat = encoded_end_seq.reshape(-1)
+        connected_num_list = np.concatenate((connected_num_list, onehot_encoded_flat))
+
+        # # 将TSD碱基序列转换为数字表示
+        # if TSD_seq == 'unknown' or 'N' in TSD_seq:
+        #     TSD_seq = ''
+        # sequences_encoded = [base_vocab[base] for base in TSD_seq]
+        # # 将序列填充到相同长度
+        # max_seq_length = 11
+        # padding_length = max_seq_length - len(TSD_seq)
+        # for i in range(padding_length):
+        #     sequences_encoded.append(0)
+
+        # 将domain set转成one-hot编码
+        encoder = [0] * 29
+        for domain_label in domain_label_set:
+            if domain_label == 'Unknown':
+                domain_label_num = 28
+            else:
+                domain_label_num = all_wicker_class[domain_label]
+            encoder[domain_label_num] = 1
+        connected_num_list = np.concatenate((connected_num_list, encoder))
+
+        #group_dict[seq_name] = (connected_num_list, sequences_encoded)
+        group_dict[seq_name] = connected_num_list
+    return group_dict
+
+def get_batch_kmer_freq_v2(grouped_x, kmer_sizes, all_wicker_class):
+    # 构建碱基序列词汇表和反向词汇表
+    base_vocab = {'A': 1, 'T': 2, 'C': 3, 'G': 4}
+
     group_dict = {}
     for x in grouped_x:
         # 将序列拆分成internal_Seq, LTR, TIR三块组成
@@ -697,46 +853,48 @@ def get_batch_kmer_freq_v1(grouped_x, kmer_sizes, all_wicker_class, p):
 
         # 将internal_seq，LTR表示成kmer频次和位置信息
         connected_num_list = []
-        kmer_size = kmer_sizes[0]
-        kmer_pos_encoder, flatten_kmer_pos_encoder = get_kmer_freq_pos_info(internal_seq, p, kmer_size)
-        connected_num_list = np.concatenate((connected_num_list, flatten_kmer_pos_encoder))
+        for kmer_size in kmer_sizes:
+            # 将internal_seq，LTR表示成kmer频次
+            words_list = word_seq(internal_seq, kmer_size, stride=1)
+            kmer_dic = generate_kmer_dic(kmer_size)
+            num_list = generate_mat(words_list, kmer_dic)
+            connected_num_list += num_list
 
-        kmer_size = kmer_sizes[1]
-        kmer_pos_encoder, flatten_kmer_pos_encoder = get_kmer_freq_pos_info(LTR_seq, p, kmer_size)
-        connected_num_list = np.concatenate((connected_num_list, flatten_kmer_pos_encoder))
+            words_list = word_seq(LTR_seq, kmer_size, stride=1)
+            kmer_dic = generate_kmer_dic(kmer_size)
+            num_list = generate_mat(words_list, kmer_dic)
+            connected_num_list += num_list
 
-        kmer_size = kmer_sizes[2]
-        kmer_pos_encoder, flatten_kmer_pos_encoder = get_kmer_freq_pos_info(TIR_seq, p, kmer_size)
-        connected_num_list = np.concatenate((connected_num_list, flatten_kmer_pos_encoder))
+            # words_list = word_seq(TIR_seq, kmer_size, stride=1)
+            # kmer_dic = generate_kmer_dic(kmer_size)
+            # num_list = generate_mat(words_list, kmer_dic)
+            # connected_num_list += num_list
 
-        # # 将internal_seq，LTR，TIR表示成kmer频次
-        # connected_num_list = []
-        # kmer_size = kmer_sizes[0]
-        # words_list = word_seq(internal_seq, kmer_size, stride=1)
-        # kmer_dic = generate_kmer_dic(kmer_size)
-        # num_list = generate_mat(words_list, kmer_dic)
-        # connected_num_list = np.concatenate((connected_num_list, num_list))
-        #
-        # kmer_size = kmer_sizes[1]
-        # words_list = word_seq(LTR_seq, kmer_size, stride=1)
-        # kmer_dic = generate_kmer_dic(kmer_size)
-        # num_list = generate_mat(words_list, kmer_dic)
-        # connected_num_list = np.concatenate((connected_num_list, num_list))
-        #
-        # kmer_size = kmer_sizes[2]
-        # words_list = word_seq(TIR_seq, kmer_size, stride=1)
-        # kmer_dic = generate_kmer_dic(kmer_size)
-        # num_list = generate_mat(words_list, kmer_dic)
-        # connected_num_list = np.concatenate((connected_num_list, num_list))
+        # 将TIR碱基序列转换为数字表示
+        max_seq_length = 60
+        sequences_encoded = []
+        for i, base in enumerate(TIR_seq):
+            base_num = base_vocab[base]
+            sequences_encoded.append(base_num)
+            if len(sequences_encoded) >= max_seq_length:
+                break
+        # 将序列填充到相同长度
+        padding_length = max_seq_length - len(TIR_seq)
+        if padding_length > 0:
+            for i in range(padding_length):
+                sequences_encoded.append(0)
+
 
         # TSD_len
-        connected_num_list = np.append(connected_num_list, TSD_len)
+        connected_num_list.append(TSD_len)
 
         # 将TSD转成one-hot编码
         encoder = np.eye(4, dtype=np.int8)
         max_length = 11
-        padding_length = max_length - len(TSD_seq)
         encoded_TSD = np.zeros((max_length, 4), dtype=np.int8)
+        if TSD_seq == 'unknown' or 'N' in TSD_seq:
+            TSD_seq = ''
+        padding_length = max_length - len(TSD_seq)
         for i, base in enumerate(TSD_seq):
             if base == 'A':
                 encoded_TSD[i] = encoder[0]
@@ -751,6 +909,34 @@ def get_batch_kmer_freq_v1(grouped_x, kmer_sizes, all_wicker_class, p):
         onehot_encoded_flat = encoded_TSD.reshape(-1)
         connected_num_list = np.concatenate((connected_num_list, onehot_encoded_flat))
 
+        # 取序列的首尾各5bp，形成一个10bp的向量
+        end_seq = seq[:5]+seq[-5:]
+        # 将end_seq转成one-hot编码
+        encoder = np.eye(4, dtype=np.int8)
+        max_length = 10
+        encoded_end_seq = np.zeros((max_length, 4), dtype=np.int8)
+        for i, base in enumerate(end_seq):
+            if base == 'A':
+                encoded_end_seq[i] = encoder[0]
+            elif base == 'T':
+                encoded_end_seq[i] = encoder[1]
+            elif base == 'C':
+                encoded_end_seq[i] = encoder[2]
+            elif base == 'G':
+                encoded_end_seq[i] = encoder[3]
+        onehot_encoded_flat = encoded_end_seq.reshape(-1)
+        connected_num_list = np.concatenate((connected_num_list, onehot_encoded_flat))
+
+        # # 将TSD碱基序列转换为数字表示
+        # if TSD_seq == 'unknown' or 'N' in TSD_seq:
+        #     TSD_seq = ''
+        # sequences_encoded = [base_vocab[base] for base in TSD_seq]
+        # # 将序列填充到相同长度
+        # max_seq_length = 11
+        # padding_length = max_seq_length - len(TSD_seq)
+        # for i in range(padding_length):
+        #     sequences_encoded.append(0)
+
         # 将domain set转成one-hot编码
         encoder = [0] * 29
         for domain_label in domain_label_set:
@@ -761,29 +947,20 @@ def get_batch_kmer_freq_v1(grouped_x, kmer_sizes, all_wicker_class, p):
             encoder[domain_label_num] = 1
         connected_num_list = np.concatenate((connected_num_list, encoder))
 
-        # # 将domain标签转成one-hot编码
-        # encoder = np.eye(len(all_wicker_class) + 1, dtype=np.int8)
-        # if domain_label == 'Unknown':
-        #     domain_label_num = 28
-        # else:
-        #     domain_label_num = all_wicker_class[domain_label]
-        # encoded_domain = encoder[domain_label_num]
-        # connected_list = np.concatenate((connected_list, encoded_domain))
-
-        group_dict[seq_name] = connected_num_list
+        group_dict[seq_name] = (connected_num_list, sequences_encoded)
     return group_dict
 
 def split_list_into_groups(lst, group_size):
     return [lst[i:i+group_size] for i in range(0, len(lst), group_size)]
 
-def generate_feature_mats(X, Y, seq_names, all_wicker_class, kmer_sizes, threads, p):
+def generate_feature_mats(X, Y, seq_names, all_wicker_class, kmer_sizes, threads):
     seq_mats = {}
     ex = ProcessPoolExecutor(threads)
     jobs = []
     grouped_X = split_list_into_groups(X, 100)
 
     for grouped_x in grouped_X:
-        job = ex.submit(get_batch_kmer_freq_v1, grouped_x, kmer_sizes, all_wicker_class, p)
+        job = ex.submit(get_batch_kmer_freq_v1, grouped_x, kmer_sizes, all_wicker_class)
         jobs.append(job)
     ex.shutdown(wait=True)
 
@@ -801,6 +978,35 @@ def generate_feature_mats(X, Y, seq_names, all_wicker_class, kmer_sizes, threads
         label_num = all_wicker_class[label]
         final_Y.append(label_num)
     return np.array(final_X), np.array(final_Y)
+
+def generate_hybrid_feature_mats(X, Y, seq_names, all_wicker_class, kmer_sizes, threads):
+    seq_mats = {}
+    ex = ProcessPoolExecutor(threads)
+    jobs = []
+    grouped_X = split_list_into_groups(X, 100)
+
+    for grouped_x in grouped_X:
+        job = ex.submit(get_batch_kmer_freq_v2, grouped_x, kmer_sizes, all_wicker_class)
+        jobs.append(job)
+    ex.shutdown(wait=True)
+
+    for job in as_completed(jobs):
+        cur_group_dict = job.result()
+        seq_mats.update(cur_group_dict)
+
+    X_num = []
+    X_seq = []
+    final_Y = []
+    for item in seq_names:
+        seq_name = item[0]
+        x = seq_mats[seq_name]
+        X_num.append(x[0])
+        X_seq.append(x[1])
+        label = Y[seq_name]
+        label_num = all_wicker_class[label]
+        final_Y.append(label_num)
+    return np.array(X_num), np.array(X_seq), np.array(final_Y)
+
 
 ##generate matrix for all samples
 def generate_mats(X, seq_names, kmer_sizes, threads):

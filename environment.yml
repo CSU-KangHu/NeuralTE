@@ -1,5 +1,6 @@
 name: DeepTE
 channels:
+  - bioconda
   - anaconda
   - conda-forge
   - defaults
@@ -12,4 +13,7 @@ dependencies:
   - scikit-learn
   - matplotlib
   - seaborn
-
+  - rmblast
+  - pip
+  - pip:
+    - openpyxl

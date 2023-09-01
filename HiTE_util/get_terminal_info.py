@@ -4,7 +4,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from HiTE_util.Util import read_fasta_v1, store_fasta, read_fasta, getReverseSequence
 
 
-def split_fasta(input_file, output_dir, num_chunks):
+def split_fasta(cur_path, output_dir, num_chunks):
     split_files = []
     os.system('rm -rf ' + output_dir)
     if not os.path.exists(output_dir):

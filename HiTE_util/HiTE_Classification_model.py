@@ -1,23 +1,26 @@
-# 融合了Seq, LTR, TIR, TSD, Domain等多种特征进行训练，同时包含k-mer的位置信息，结果为：
-# Accuracy: 0.9501869658119658
-# Precision: 0.9619140278215257
-# Recall: 0.88073047596089
-# F1: 0.91124188158888
+# 融合了Seq, LTR, TIR, TSD, Domain等多种特征进行训练，同时包含k-mer的位置信息：
+# 进行K折交叉验证，并计算AUC, ROC：
 
-import json
+
 import os
 
 import tensorflow as tf
 
 from keras.utils import np_utils
-from keras.models import Sequential, load_model
-from keras.layers import Dense, Dropout, Activation, Flatten, LSTM, Conv1D, Conv2D, MaxPooling1D, MaxPooling2D, Bidirectional
+from keras.models import Sequential, load_model, Model
+from keras.layers import Layer, Input, Dense, Dropout, Activation, Flatten, LSTM, Conv1D, Conv2D,\
+    MaxPooling1D, MaxPooling2D, Bidirectional, Embedding, GlobalAveragePooling1D, concatenate, \
+    MultiHeadAttention, LayerNormalization
 from keras.callbacks import ModelCheckpoint, EarlyStopping
 import numpy as np
 
-from HiTE_util.plot_confusion_matrix import plot_confusion_matrix
-from Util import load_repbase_with_TSD, generate_mats, conv_labels, load_repbase, read_fasta_v1, generate_feature_mats
+
+from plot_confusion_matrix import plot_confusion_matrix
+from Util import load_repbase_with_TSD, generate_mats, conv_labels, load_repbase, read_fasta_v1, generate_feature_mats, \
+    generate_hybrid_feature_mats
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import roc_auc_score, roc_curve, auc
+from sklearn.model_selection import StratifiedKFold, KFold
 
 from attn_augconv import augmented_conv2d, augmented_conv1d
 
@@ -57,27 +60,192 @@ def make_or_restore_model():
     print("Creating a new model")
     return get_compiled_model()
 
-def run_training(batch_size=32, epochs=1, use_checkpoint=1):
-    if use_checkpoint == 0:
-        os.system('cd ' + checkpoint_dir + ' && rm -rf ckpt*')
-    # Create a MirroredStrategy.
-    strategy = tf.distribute.MirroredStrategy()
+def run_training(X_num, X_seq, Y, batch_size=32, epochs=1, use_checkpoint=1):
+    # 定义K折交叉验证
+    n_splits = 5
+    #skf = StratifiedKFold(n_splits=n_splits, shuffle=True)
+    kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
 
-    # Open a strategy scope and create/restore the model
-    with strategy.scope():
-        model = make_or_restore_model()
+    # # 初始化AUC列表
+    # 循环每个K折
+    for fold, (train_index, test_index) in enumerate(kf.split(X_num)):
+        X_num_train, X_num_test = X_num[train_index], X_num[test_index]
+        X_seq_train, X_seq_test = X_seq[train_index], X_seq[test_index]
+        y_train, y_test = Y[train_index], Y[test_index]
+        y_train_one_hot = np_utils.to_categorical(y_train, int(class_num))
+        y_train_one_hot = np.array(y_train_one_hot)
+        y_test_one_hot = np_utils.to_categorical(y_test, int(class_num))
+        y_test_one_hot = np.array(y_test_one_hot)
 
-    callbacks = [
-        # This callback saves a SavedModel every epoch
-        # We include the current epoch in the folder name.
-        ModelCheckpoint(
-            filepath=checkpoint_dir + "/ckpt-{epoch}", save_freq="epoch"
-        ),
-        EarlyStopping(monitor='val_loss', patience=20)
-    ]
+        # 构建模型
+        if use_checkpoint == 0:
+            os.system('cd ' + checkpoint_dir + ' && rm -rf ckpt*')
+        # Create a MirroredStrategy.
+        strategy = tf.distribute.MirroredStrategy()
+        # Open a strategy scope and create/restore the model
+        with strategy.scope():
+            model = make_or_restore_model()
 
-    model.fit(X_train, Y_train_one_hot, validation_data=(X_validate, Y_validate_one_hot), callbacks=callbacks,
-              batch_size=batch_size, epochs=epochs, verbose=1)
+        # 训练模型
+        model.fit([X_num_train, X_seq_train], y_train_one_hot, batch_size=batch_size, epochs=epochs, verbose=1)
+        # 预测概率
+        y_pred = model.predict([X_num_test, X_seq_test])
+        predicted_classes = np.argmax(np.round(y_pred), axis=1)
+        # transfer the prop less than a threshold to be unknown for a class
+        prop_thr = 0
+        max_value_predicted_classes = np.amax(y_pred, axis=1)
+        order = -1
+        ls_thr_order_list = []
+        for i in range(len(max_value_predicted_classes)):
+            order += 1
+            if max_value_predicted_classes[i] < float(prop_thr):
+                ls_thr_order_list.append(order)
+
+        predicted_classes_list = []
+        order = -1
+        for i in range(len(predicted_classes)):
+            order += 1
+            if order in ls_thr_order_list:
+                new_class = 28    #unknown class label
+            else:
+                new_class = predicted_classes[i]
+            predicted_classes_list.append(new_class)
+
+        # 计算准确率
+        accuracy = accuracy_score(y_test, predicted_classes_list)
+        print("Accuracy:", accuracy)
+        # 计算精确率
+        precision = precision_score(y_test, predicted_classes_list, average='macro')
+        print("Precision:", precision)
+        # 计算召回率
+        recall = recall_score(y_test, predicted_classes_list, average='macro')
+        print("Recall:", recall)
+        # 计算F1值
+        f1 = f1_score(y_test, predicted_classes_list, average='macro')
+        print("F1:", f1)
+
+        # # 绘制ROC曲线（可选）
+        # import matplotlib.pyplot as plt
+        # # 计算多类别的ROC曲线和AUC
+        # fpr = dict()
+        # tpr = dict()
+        # roc_auc = dict()
+        #
+        # for class_idx in range(y_pred.shape[1]):
+        #     fpr[class_idx], tpr[class_idx], _ = roc_curve(y_test == class_idx, y_pred[:, class_idx])
+        #     roc_auc[class_idx] = auc(fpr[class_idx], tpr[class_idx])
+        #
+        # # 绘制多类别的ROC曲线
+        # plt.figure(figsize=(10, 10))
+        # for class_idx in range(y_pred.shape[1]):
+        #     plt.plot(fpr[class_idx], tpr[class_idx], label=f'Class {class_idx} (AUC = {roc_auc[class_idx]:.2f})')
+        #
+        # plt.plot([0, 1], [0, 1], 'k--')
+        # plt.xlim([0.0, 1.0])
+        # plt.ylim([0.0, 1.05])
+        # plt.xlabel('False Positive Rate')
+        # plt.ylabel('True Positive Rate')
+        # plt.title('Multi-Class ROC Curve')
+        # plt.legend(loc="lower right")
+        # plt.show()
+
+    return model
+
+# 构建 CNN 模型
+def cnn_model(input_shape):
+    # 输入层
+    input_layer = Input(shape=input_shape)
+    # 添加卷积层
+    conv1 = Conv1D(32, 3, activation='relu')(input_layer)
+    conv2 = Conv1D(32, 3, activation='relu')(conv1)
+    conv3 = Conv1D(32, 3, activation='relu')(conv2)
+    conv4 = Conv1D(32, 3, activation='relu')(conv3)
+    dropout1 = Dropout(0.5)(conv4)
+    # 添加展平层和全连接层
+    flatten = Flatten()(dropout1)
+    # 构建模型
+    model = Model(inputs=input_layer, outputs=flatten)
+    return model
+
+
+# # 构建 Transformer 模型
+# def transformer_model(input_shape, vocab_size):
+#     input_layer = Input(shape=input_shape)
+#     embedding_layer = Embedding(input_dim=vocab_size, output_dim=64)(input_layer)
+#
+#     # 自注意层
+#     attention_layer = tf.keras.layers.MultiHeadAttention(num_heads=4, key_dim=16)(embedding_layer, embedding_layer)
+#     pooling_layer = GlobalAveragePooling1D()(attention_layer)
+#     return Model(inputs=input_layer, outputs=pooling_layer)
+
+# 构建 Transformer 模型
+def transformer_model(input_shape, vocab_size, num_heads, d_model, num_layers, max_seq_length):
+    inputs = Input(shape=input_shape)
+    embedding_layer = Embedding(input_dim=vocab_size, output_dim=d_model)(inputs)
+
+    # 生成位置编码
+    position_encoding = positional_encoding(max_seq_length, d_model)
+    encoded_inputs = embedding_layer + position_encoding
+
+    # 创建多个 Transformer 层
+    for _ in range(num_layers):
+        attention_output = MultiHeadAttention(num_heads=num_heads, key_dim=d_model)(value=encoded_inputs,
+                                                                                    query=encoded_inputs,
+                                                                                    key=encoded_inputs)
+        attention_output = LayerNormalization(epsilon=1e-6)(attention_output + encoded_inputs)
+
+        feedforward_output = feed_forward(attention_output, d_model)
+        encoded_inputs = LayerNormalization(epsilon=1e-6)(feedforward_output + attention_output)
+
+    # 对最终输出进行全局平均池化
+    pooling_layer = GlobalAveragePooling1D()(encoded_inputs)
+
+    return Model(inputs=inputs, outputs=pooling_layer)
+
+# 生成位置编码
+def positional_encoding(max_seq_length, d_model):
+    position = np.arange(max_seq_length)[:, np.newaxis]
+    angle_rates = 1 / np.power(10000, (2 * (np.arange(d_model)[np.newaxis, :]) // 2) / d_model)
+    position_encoding = position * angle_rates
+
+    # 偶数索引使用正弦函数，奇数索引使用余弦函数
+    position_encoding[:, 0::2] = np.sin(position_encoding[:, 0::2])
+    position_encoding[:, 1::2] = np.cos(position_encoding[:, 1::2])
+
+    return position_encoding
+
+
+# 前馈神经网络
+def feed_forward(x, d_model):
+    d_ff = 4 * d_model  # 前馈层维度
+    ff_layer = tf.keras.Sequential([
+        Dense(d_ff, activation='relu'),
+        Dense(d_model)
+    ])
+    return ff_layer(x)
+
+
+# 构建并编译混合模型
+def hybrid_model(cnn_model, transformer_model):
+    cnn_input_shape = (X_feature_len, 1)
+    max_TSD_seq_length = 11
+    vocab_size = 5
+    num_heads = 4
+    d_model = 64
+    num_layers = 2
+    transformer_input_shape = (max_TSD_seq_length,)
+
+    cnn = cnn_model(cnn_input_shape)
+    transformer = transformer_model(transformer_input_shape, vocab_size, num_heads, d_model, num_layers, max_TSD_seq_length)
+
+    combined_output = concatenate([cnn.output, transformer.output])
+    dense_layer = Dense(128, activation='relu')(combined_output)
+    #dense_layer = Dense(128, activation='relu')(cnn.output)
+    output_layer = Dense(int(class_num), activation='softmax')(dense_layer)
+
+    model = Model(inputs=[cnn.input, transformer.input], outputs=output_layer)
+    #model = Model(inputs=cnn.input, outputs=output_layer)
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
     return model
 
 def get_compiled_model():
@@ -114,24 +282,27 @@ def get_compiled_model():
     # 32-32-32-32： F1: 0.9120153577045595
     # 128-64-32-32： F1: 0.9047548731675614
 
-    # 2. CNN model
-    model = Sequential()
-    model.add(Conv1D(32, 3, activation='relu', input_shape=(X_feature_len, 1)))
-    #model.add(MaxPooling1D(pool_size=2))
-    model.add(Conv1D(32, 3, activation='relu'))
-    #model.add(MaxPooling1D(pool_size=2))
-    model.add(Conv1D(32, 3, activation='relu'))
-    #model.add(MaxPooling1D(pool_size=2))
-    model.add(Conv1D(32, 3, activation='relu'))
-    # model.add(MaxPooling1D(pool_size=2))
-    model.add(Dropout(0.5))
+    # # 2. CNN model
+    # model = Sequential()
+    # model.add(Conv1D(32, 3, activation='relu', input_shape=(X_feature_len, 1)))
+    # #model.add(MaxPooling1D(pool_size=2))
+    # model.add(Conv1D(32, 3, activation='relu'))
+    # #model.add(MaxPooling1D(pool_size=2))
+    # model.add(Conv1D(32, 3, activation='relu'))
+    # #model.add(MaxPooling1D(pool_size=2))
+    # model.add(Conv1D(32, 3, activation='relu'))
+    # #model.add(MaxPooling1D(pool_size=2))
+    # model.add(Dropout(0.5))
+    #
+    # model.add(Flatten())
+    # model.add(Dense(128, activation='relu'))
+    # model.add(Dropout(0.5))
+    #
+    # model.add(Dense(int(class_num), activation='softmax'))
+    # model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
 
-    model.add(Flatten())
-    model.add(Dense(128, activation='relu'))
-    model.add(Dropout(0.5))
-
-    model.add(Dense(int(class_num), activation='softmax'))
-    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+    # 构建混合模型
+    model = hybrid_model(cnn_model, transformer_model)
 
     # from keras.layers import Conv1D, Flatten, Dense, Dropout, Input
     # from keras.models import Model
@@ -202,7 +373,7 @@ def get_metrics(y_test, y_pred, all_class_list):
 if __name__ == '__main__':
     # Step 0: 配置参数
     batch_size = 32
-    epochs = 100
+    epochs = 50
     use_checkpoint = 0
 
     # Step 1: 获取所有superfamily的标签
@@ -217,146 +388,103 @@ if __name__ == '__main__':
     # Step 2: 将Repbase序列和TSD数据， 以及label 转换成特征
     threads = 40
     data_dir = '/home/hukang/NeuralTE/data'
-    #data_dir = '/public/home/hpc194701009/TE_Classification/NeuralTE/data'
-    train_path = data_dir + '/repbase_train_part.64.ref.update'
-    test_path = data_dir + '/repbase_test_part.64.ref.update'
 
-    domain_train_path = train_path + '.domain'
-    domain_test_path = test_path + '.domain'
+    data_path = data_dir + '/repbase_total.64.ref.shuffle.update'
+    domain_path = data_dir + '/repbase_total.64.ref.update.domain'
 
-    # train_path = data_dir + '/test.ref.update'
-    # test_path = data_dir + '/test.ref.update'
+    # Step 3: 加载repbase数据。将序列划分成internal_seq, LTR, TIR，TSD四个部分，分别用k=5, 4, 3频次表示internal_seq, LTR, TIR;TSD用one-hot编码表示，用多1位表示TSD_length;将domain转为One-hot编码
+    parts = ['internal_seq', 'LTR', 'TIR']
+    kmer_sizes = [1, 2, 3, 4]
+    X_feature_len = 1 + 29
+    for part in parts:
+        for kmer_size in kmer_sizes:
+            X_feature_len += pow(4, kmer_size)
 
-    # 将序列均分成p段，记录k-mer来自哪些段，这样相当于包含了k-mer的位置信息
-    p = 50
-
-    # Step 1: 加载repbase数据。将序列划分成internal_seq, LTR, TIR，TSD四个部分，分别用k=5, 4, 3频次表示internal_seq, LTR, TIR;TSD用one-hot编码表示，用多1位表示TSD_length;将domain转为One-hot编码
-    kmer_sizes = [3, 3, 3]
-    X_feature_len = 11 * 4 + 1 + 29
-    #X_feature_len = 29
-    # for kmer_size in kmer_sizes:
-    #     X_feature_len += pow(4, kmer_size)
-
-    # 目前只将internal_seq和LTR的k-mer生成位置信息
-    for i, kmer_size in enumerate(kmer_sizes):
-        X_feature_len += pow(4, kmer_size) * p
-
-    X, Y, seq_names = load_repbase_with_TSD(train_path, domain_train_path, all_wicker_class)
-    X, Y = generate_feature_mats(X, Y, seq_names, all_wicker_class, kmer_sizes, threads, p)
-
-
-    # Step 3: 抽取训练集的20%当做验证集
-    divide_data_most_part = int(X.shape[0] * 0.8)
-    X_train = np.array(X[0:divide_data_most_part])  ##change the sample
-    X_validate = np.array(X[divide_data_most_part:])
-    Y_train = np.array(Y[0:divide_data_most_part])
-    Y_validate = np.array(Y[divide_data_most_part:])
+    X, Y, seq_names = load_repbase_with_TSD(data_path, domain_path, all_wicker_class)
+    #X, Y = generate_feature_mats(X, Y, seq_names, all_wicker_class, kmer_sizes, threads)
+    X_num, X_seq, Y = generate_hybrid_feature_mats(X, Y, seq_names, all_wicker_class, kmer_sizes, threads)
 
     # Step 4: 将数据reshape成模型接收的格式
-    # 训练和验证集
-    X_train = X_train.reshape(X_train.shape[0], X_feature_len, 1)
-    X_validate = X_validate.reshape(X_validate.shape[0], X_feature_len, 1)
-    X_train = X_train.astype('float64')
-    X_validate = X_validate.astype('float64')
-    Y_train_one_hot = np_utils.to_categorical(Y_train, int(class_num))
-    Y_validate_one_hot = np_utils.to_categorical(Y_validate, int(class_num))
-
-    X_train = np.array(X_train)
-    Y_train_one_hot = np.array(Y_train_one_hot)
-    X_validate = np.array(X_validate)
-    Y_validate_one_hot = np.array(Y_validate_one_hot)
-
-    # 测试集
-    X_test, Y_test, Y_test_name = load_repbase_with_TSD(test_path, domain_test_path, all_wicker_class)
-    X_test, Y_test = generate_feature_mats(X_test, Y_test, Y_test_name, all_wicker_class, kmer_sizes, threads, p)
-    X_test = X_test.reshape(X_test.shape[0], X_feature_len, 1)
-    X_test = X_test.astype('float64')
-    Y_test_one_hot = np_utils.to_categorical(Y_test, int(class_num))
-    X_test = np.array(X_test)
-    Y_test_one_hot = np.array(Y_test_one_hot)
-
-    print('X_train and Y_train_one_hot shape: ')
-    print(X_train.shape, Y_train_one_hot.shape)
-    print('X_validate and Y_validate_one_hot shape: ')
-    print(X_validate.shape, Y_validate_one_hot.shape)
-    print('X_test and Y_test_one_hot shape: ')
-    print(X_test.shape, Y_test_one_hot.shape)
+    X_num = X_num.reshape(X_num.shape[0], X_feature_len, 1)
+    X_num = X_num.astype('float64')
+    X_seq = X_seq.astype('float64')
+    print('X_num, X_seq and Y shape: ')
+    print(X_num.shape, X_seq.shape, Y.shape)
     print('batch size: ' + str(batch_size))
 
-
-    # Step 6: 训练模型
+    # Step 5: 训练模型, 使用K折交叉验证
     # Running the first time creates the model
-    model = run_training(batch_size=batch_size, epochs=epochs, use_checkpoint=use_checkpoint)
+    model = run_training(X_num, X_seq, Y, batch_size=batch_size, epochs=epochs, use_checkpoint=use_checkpoint)
 
-    # Step 7: 保存模型
+    # Step 6: 保存模型
     model_path = 'model/' + 'test_model.h5'
     model.save(model_path)
 
-    # Step 8: 在测试集上进行测试，并输出所有评测指标
-    model_path = 'model/' + 'test_model.h5'
-    model = load_model(model_path)
-
-    # Step 9: 评估模型
-    loss, accuracy = model.evaluate(X_test, Y_test_one_hot, batch_size=batch_size, verbose=1)
-    print("\nloss=" + str(loss) + ', accuracy=' + str(accuracy))
-
-    prop_thr = 0
-
-    ##Step 9.2: generate the predict class
-    Y_pred = model.predict(X_test)
-
-    predicted_classes = np.argmax(np.round(Y_pred), axis=1)
-    predicted_classes_list = predicted_classes.tolist()
-    # print(predicted_classes_list)
-    # print(Y_pred)
-    # print(Y_pred.shape)
-
-    ##Step 9.3 transfer the prop less than a threshold to be unknown for a class
-    max_value_predicted_classes = np.amax(Y_pred, axis=1)
-    order = -1
-    ls_thr_order_list = []
-    for i in range(len(max_value_predicted_classes)):
-        order += 1
-        if max_value_predicted_classes[i] < float(prop_thr):
-            ls_thr_order_list.append(order)
-
-    new_predicted_classes_list = []
-    order = -1
-    for i in range(len(predicted_classes)):
-        order += 1
-        if order in ls_thr_order_list:
-            new_class = 28    #unknown class label
-        else:
-            new_class = predicted_classes[i]
-        new_predicted_classes_list.append(new_class)
-    # print(new_predicted_classes_list)
-    # print(len(new_predicted_classes_list))
-
-    y_test_labels = []
-    y_test_predicts = []
-    store_results_dic = {}
-    for i in range(0, len(new_predicted_classes_list)):
-        predicted_class = new_predicted_classes_list[i]
-        y_test_tuple = Y_test_name[i]
-        seq_name = y_test_tuple[0]
-        label = y_test_tuple[1]
-        y_test_labels.append(label)
-        if predicted_class != 28:
-            store_results_dic[seq_name] = str(seq_name) + ',' + str(label) + ',' + inverted_all_wicker_class[predicted_class]
-            y_test_predicts.append(inverted_all_wicker_class[predicted_class])
-        else:
-            store_results_dic[seq_name] = str(seq_name) + ',' + str(label) + ',' + 'Unknown'
-            y_test_predicts.append('Unknown')
-
-
-    with open ('results/' + 'test_results.txt', 'w+') as opt:
-        for eachid in store_results_dic:
-            opt.write(store_results_dic[eachid] + '\n')
-
-    # print(y_test_labels)
-    # print(len(y_test_labels))
-    # print(y_test_predicts)
-    # print(len(y_test_predicts))
-    y_test = np.array(Y_test)
-    y_pred = np.array(new_predicted_classes_list)
-    get_metrics(y_test, y_pred, inverted_all_wicker_class)
+    # # Step 8: 在测试集上进行测试，并输出所有评测指标
+    # model_path = 'model/' + 'test_model.h5'
+    # model = load_model(model_path)
+    #
+    # # Step 9: 评估模型
+    # loss, accuracy = model.evaluate(X_test, Y_test_one_hot, batch_size=batch_size, verbose=1)
+    # print("\nloss=" + str(loss) + ', accuracy=' + str(accuracy))
+    #
+    # prop_thr = 0
+    #
+    # ##Step 9.2: generate the predict class
+    # Y_pred = model.predict(X_test)
+    #
+    # predicted_classes = np.argmax(np.round(Y_pred), axis=1)
+    # predicted_classes_list = predicted_classes.tolist()
+    # # print(predicted_classes_list)
+    # # print(Y_pred)
+    # # print(Y_pred.shape)
+    #
+    # ##Step 9.3 transfer the prop less than a threshold to be unknown for a class
+    # max_value_predicted_classes = np.amax(Y_pred, axis=1)
+    # order = -1
+    # ls_thr_order_list = []
+    # for i in range(len(max_value_predicted_classes)):
+    #     order += 1
+    #     if max_value_predicted_classes[i] < float(prop_thr):
+    #         ls_thr_order_list.append(order)
+    #
+    # new_predicted_classes_list = []
+    # order = -1
+    # for i in range(len(predicted_classes)):
+    #     order += 1
+    #     if order in ls_thr_order_list:
+    #         new_class = 28    #unknown class label
+    #     else:
+    #         new_class = predicted_classes[i]
+    #     new_predicted_classes_list.append(new_class)
+    # # print(new_predicted_classes_list)
+    # # print(len(new_predicted_classes_list))
+    #
+    # y_test_labels = []
+    # y_test_predicts = []
+    # store_results_dic = {}
+    # for i in range(0, len(new_predicted_classes_list)):
+    #     predicted_class = new_predicted_classes_list[i]
+    #     y_test_tuple = Y_test_name[i]
+    #     seq_name = y_test_tuple[0]
+    #     label = y_test_tuple[1]
+    #     y_test_labels.append(label)
+    #     if predicted_class != 28:
+    #         store_results_dic[seq_name] = str(seq_name) + ',' + str(label) + ',' + inverted_all_wicker_class[predicted_class]
+    #         y_test_predicts.append(inverted_all_wicker_class[predicted_class])
+    #     else:
+    #         store_results_dic[seq_name] = str(seq_name) + ',' + str(label) + ',' + 'Unknown'
+    #         y_test_predicts.append('Unknown')
+    #
+    #
+    # with open ('results/' + 'test_results.txt', 'w+') as opt:
+    #     for eachid in store_results_dic:
+    #         opt.write(store_results_dic[eachid] + '\n')
+    #
+    # # print(y_test_labels)
+    # # print(len(y_test_labels))
+    # # print(y_test_predicts)
+    # # print(len(y_test_predicts))
+    # y_test = np.array(Y_test)
+    # y_pred = np.array(new_predicted_classes_list)
+    # get_metrics(y_test, y_pred, inverted_all_wicker_class)

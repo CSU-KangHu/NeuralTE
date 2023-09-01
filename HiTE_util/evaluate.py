@@ -5,7 +5,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 import os
 import numpy as np
 
-from Util import read_fasta_v1, store_fasta
+from Util import read_fasta_v1, store_fasta, getReverseSequence
 import random
 
 def get_metrics(y_test, y_pred):
@@ -23,28 +23,91 @@ def get_metrics(y_test, y_pred):
     print("F1:", f1)
 
 
+# work_dir = '/home/hukang/NeuralTE/data'
+# threads = 40
+# cur_repbase_train_path = work_dir + '/repbase_train.ref'
+# cur_repbase_test_path = work_dir + '/repbase_test.ref'
+# # 1. 先将Repbase数据按照8-2比例划分成训练集和测试集
+# cur_repbase_path = work_dir + '/all_repbase.ref_preprocess.ref.update'
+# names, contigs = read_fasta_v1(cur_repbase_path)
+# # 随机打乱列表
+# random.shuffle(names)
+# # 计算划分的索引位置
+# split_index = int(0.8 * len(names))
+# # 划分成80%和20%的两个列表
+# train_list = names[:split_index]
+# test_list = names[split_index:]
+# train_contigs = {}
+# test_contigs = {}
+# for name in train_list:
+#     train_contigs[name] = contigs[name]
+# for name in test_list:
+#     test_contigs[name] = contigs[name]
+# store_fasta(train_contigs, cur_repbase_train_path)
+# store_fasta(test_contigs, cur_repbase_test_path)
+
+# work_dir = '/home/hukang/NeuralTE/data'
+# threads = 40
+# cur_repbase_total_path = work_dir + '/repbase_total.64.ref.update'
+# names, contigs = read_fasta_v1(cur_repbase_total_path)
+# # 随机打乱列表
+# random.shuffle(names)
+# shuffle_repbase_total_path = work_dir + '/repbase_total.64.ref.shuffle.update'
+# shuffle_contigs = {}
+# for name in names:
+#     shuffle_contigs[name] = contigs[name]
+# store_fasta(shuffle_contigs, shuffle_repbase_total_path)
+
+# 对数据集加入反向互补序列
+# 去掉数据集里面名字以-LTR和-I结尾的，这两个表示该序列为LTR的末端和内部序列，不是一条完整的LTR
 work_dir = '/home/hukang/NeuralTE/data'
-threads = 40
-cur_repbase_train_path = work_dir + '/repbase_train.ref'
-cur_repbase_test_path = work_dir + '/repbase_test.ref'
-# 1. 先将Repbase数据按照8-2比例划分成训练集和测试集
-cur_repbase_path = work_dir + '/all_repbase.ref_preprocess.ref.update'
-names, contigs = read_fasta_v1(cur_repbase_path)
-# 随机打乱列表
-random.shuffle(names)
-# 计算划分的索引位置
-split_index = int(0.8 * len(names))
-# 划分成80%和20%的两个列表
-train_list = names[:split_index]
-test_list = names[split_index:]
-train_contigs = {}
-test_contigs = {}
-for name in train_list:
-    train_contigs[name] = contigs[name]
-for name in test_list:
-    test_contigs[name] = contigs[name]
-store_fasta(train_contigs, cur_repbase_train_path)
-store_fasta(test_contigs, cur_repbase_test_path)
+shuffle_repbase_total_path = work_dir + '/repbase_total.64.ref.shuffle.update'
+names, contigs = read_fasta_v1(shuffle_repbase_total_path)
+RC_repbase_total_path = work_dir + '/repbase_total.64.ref.shuffle.rc.update'
+rc_contigs = {}
+for name in names:
+    name_parts = name.split('\t')
+    suffix_name = "\t".join(name_parts[1:])
+    seq_name = name_parts[0]
+    if seq_name.endswith('-LTR') or seq_name.endswith('-I'):
+        continue
+    seq = contigs[name]
+    rc_contigs[name] = seq
+    # rc_seq = getReverseSequence(seq)
+    # rc_contigs[seq_name+'-RC\t'+suffix_name] = rc_seq
+store_fasta(rc_contigs, shuffle_repbase_total_path)
+
+train_path = work_dir + '/repbase_train_part.64.ref.update'
+test_path = work_dir + '/repbase_test_part.64.ref.update'
+rc_train_path = work_dir + '/repbase_train_part.64.ref.rc.update'
+rc_test_path = work_dir + '/repbase_test_part.64.ref.rc.update'
+names, contigs = read_fasta_v1(train_path)
+rc_contigs = {}
+for name in names:
+    name_parts = name.split('\t')
+    suffix_name = "\t".join(name_parts[1:])
+    seq_name = name_parts[0]
+    if seq_name.endswith('-LTR') or seq_name.endswith('-I'):
+        continue
+    seq = contigs[name]
+    rc_contigs[name] = seq
+    # rc_seq = getReverseSequence(seq)
+    # rc_contigs[seq_name+'-RC\t'+suffix_name] = rc_seq
+store_fasta(rc_contigs, train_path)
+names, contigs = read_fasta_v1(test_path)
+rc_contigs = {}
+for name in names:
+    name_parts = name.split('\t')
+    suffix_name = "\t".join(name_parts[1:])
+    seq_name = name_parts[0]
+    if seq_name.endswith('-LTR') or seq_name.endswith('-I'):
+        continue
+    seq = contigs[name]
+    rc_contigs[name] = seq
+    # rc_seq = getReverseSequence(seq)
+    # rc_contigs[seq_name+'-RC\t'+suffix_name] = rc_seq
+store_fasta(rc_contigs, test_path)
+
 
 # # 2. 在test数据集上评估RepeatClassifier
 ## 2.1 运行RepeatClassifier
