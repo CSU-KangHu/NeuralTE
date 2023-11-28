@@ -3,6 +3,7 @@ import json
 import os
 import random
 import re
+import subprocess
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import pandas as pd
 from openpyxl.utils import get_column_letter
@@ -18,6 +19,7 @@ def summary_class_ratio(repbase_path):
     train_names, train_contigs = read_fasta_v1(repbase_path)
     train_class_num = {}
     train_class_ratio = {}
+    train_class_ratio_reverse = {}
     class_set = set()
     species_set = set()
     for name in train_names:
@@ -33,8 +35,11 @@ def summary_class_ratio(repbase_path):
     for class_name in train_class_num.keys():
         class_num = train_class_num[class_name]
         ratio = round(100 * float(class_num) / len(train_names), 2)
+        reverse_ratio = round(1/ratio, 2)
         train_class_ratio[class_name] = ratio
+        train_class_ratio_reverse[class_name] = reverse_ratio
     print(train_class_ratio)
+    #print(train_class_ratio_reverse)
     print(len(species_set))
     return train_class_num, class_set
 
@@ -272,32 +277,33 @@ def get_batch_kmer_freq_v1(grouped_x, internal_kmer_sizes, terminal_kmer_sizes, 
 
         # 将internal_seq，LTR表示成kmer频次和位置信息
         connected_num_list = []
-        for kmer_size in internal_kmer_sizes:
-            if config.use_terminal:
-                # 将internal_seq表示成kmer频次
-                words_list = word_seq(internal_seq, kmer_size, stride=1)
-                kmer_dic = generate_kmer_dic(kmer_size)
-                num_list = generate_mat(words_list, kmer_dic)
-                connected_num_list += num_list
-            else:
-                # 将seq表示成kmer频次
-                words_list = word_seq(seq, kmer_size, stride=1)
-                kmer_dic = generate_kmer_dic(kmer_size)
-                num_list = generate_mat(words_list, kmer_dic)
-                connected_num_list += num_list
+        if config.use_kmers:
+            for kmer_size in internal_kmer_sizes:
+                if config.use_terminal:
+                    # 将internal_seq表示成kmer频次
+                    words_list = word_seq(internal_seq, kmer_size, stride=1)
+                    kmer_dic = generate_kmer_dic(kmer_size)
+                    num_list = generate_mat(words_list, kmer_dic)
+                    connected_num_list += num_list
+                else:
+                    # 将seq表示成kmer频次
+                    words_list = word_seq(seq, kmer_size, stride=1)
+                    kmer_dic = generate_kmer_dic(kmer_size)
+                    num_list = generate_mat(words_list, kmer_dic)
+                    connected_num_list += num_list
 
-        for kmer_size in terminal_kmer_sizes:
-            if config.use_terminal:
-                # 将LTR，TIR表示成kmer频次
-                words_list = word_seq(LTR_seq, kmer_size, stride=1)
-                kmer_dic = generate_kmer_dic(kmer_size)
-                num_list = generate_mat(words_list, kmer_dic)
-                connected_num_list += num_list
+            for kmer_size in terminal_kmer_sizes:
+                if config.use_terminal:
+                    # 将LTR，TIR表示成kmer频次
+                    words_list = word_seq(LTR_seq, kmer_size, stride=1)
+                    kmer_dic = generate_kmer_dic(kmer_size)
+                    num_list = generate_mat(words_list, kmer_dic)
+                    connected_num_list += num_list
 
-                words_list = word_seq(TIR_seq, kmer_size, stride=1)
-                kmer_dic = generate_kmer_dic(kmer_size)
-                num_list = generate_mat(words_list, kmer_dic)
-                connected_num_list += num_list
+                    words_list = word_seq(TIR_seq, kmer_size, stride=1)
+                    kmer_dic = generate_kmer_dic(kmer_size)
+                    num_list = generate_mat(words_list, kmer_dic)
+                    connected_num_list += num_list
 
         # # 将TIR碱基序列转换为数字表示
         # max_seq_length = 60
@@ -381,6 +387,24 @@ def get_batch_kmer_freq_v1(grouped_x, internal_kmer_sizes, terminal_kmer_sizes, 
         #group_dict[seq_name] = (connected_num_list, sequences_encoded)
         group_dict[seq_name] = connected_num_list
     return group_dict
+
+def get_feature_len():
+    # 获取CNN输入维度
+    X_feature_len = 0
+    # TE seq/internal_seq 维度
+    for kmer_size in config.internal_kmer_sizes:
+        X_feature_len += pow(4, kmer_size)
+    if config.use_terminal != 0:
+        for i in range(2):
+            for kmer_size in config.terminal_kmer_sizes:
+                X_feature_len += pow(4, kmer_size)
+    if config.use_TSD != 0:
+        X_feature_len += config.max_tsd_length * 4 + 1
+    if config.use_domain != 0:
+        X_feature_len += 29
+    if config.use_ends != 0:
+        X_feature_len += 10 * 4
+    return X_feature_len
 
 def split_list_into_groups(lst, group_size):
     return [lst[i:i+group_size] for i in range(0, len(lst), group_size)]
@@ -530,6 +554,36 @@ def load_repbase_with_TSD(path, domain_path, all_wicker_class, RM_Wicker_struct)
         seq_names.append((seq_name, label))
     return X, Y, seq_names
 
+def generate_non_autonomous_data(total_repbase, out_path):
+    pattern = r'[^-_]+-\d*N\d*[a-zA-Z]*_[^-_]+$'
+    names, contigs = read_fasta_v1(total_repbase)
+    DNA_labels = ['Tc1-Mariner', 'hAT', 'Mutator', 'Merlin', 'Transib', 'P', 'PiggyBac', 'PIF-Harbinger', 'CACTA']
+    match_names = []
+    out_contigs = {}
+    for name in names:
+        parts = name.split('\t')
+        seq_name = parts[0]
+        label = parts[1]
+        if label in DNA_labels and re.match(pattern, seq_name):
+            match_names.append(name)
+            out_contigs[name] = contigs[name]
+    print(len(match_names))
+    store_fasta(out_contigs, out_path)
+
+def generate_only_dna_data(total_repbase, out_path):
+    names, contigs = read_fasta_v1(total_repbase)
+    DNA_labels = ['Tc1-Mariner', 'hAT', 'Mutator', 'Merlin', 'Transib', 'P', 'PiggyBac', 'PIF-Harbinger', 'CACTA']
+    match_names = []
+    out_contigs = {}
+    for name in names:
+        parts = name.split('\t')
+        seq_name = parts[0]
+        label = parts[1]
+        if label in DNA_labels:
+            match_names.append(name)
+            out_contigs[name] = contigs[name]
+    print(len(match_names))
+    store_fasta(out_contigs, out_path)
 
 def split_fasta(cur_path, output_dir, num_chunks):
     split_files = []
@@ -553,63 +607,71 @@ def split_fasta(cur_path, output_dir, num_chunks):
         split_files.append(output_path)
     return split_files
 
+def run_command(command):
+    subprocess.run(command, check=True, shell=True)
 
 def identify_terminals(split_file, output_dir, tool_dir):
-    ltrsearch_command = 'cd ' + output_dir + ' && ' + tool_dir + '/ltrsearch ' + split_file
-    itrsearch_command = 'cd ' + output_dir + ' && ' + tool_dir + '/itrsearch -i 0.7 -l 7 ' + split_file
-    os.system(ltrsearch_command)
-    os.system(itrsearch_command)
-    ltr_file = split_file + '.ltr'
-    tir_file = split_file + '.itr'
+    try:
+        ltrsearch_command = 'cd ' + output_dir + ' && ' + tool_dir + '/ltrsearch -l 50 ' + split_file
+        itrsearch_command = 'cd ' + output_dir + ' && ' + tool_dir + '/itrsearch -i 0.7 -l 7 ' + split_file
+        run_command(ltrsearch_command)
+        run_command(itrsearch_command)
+        # os.system(ltrsearch_command)
+        # os.system(itrsearch_command)
+        ltr_file = split_file + '.ltr'
+        tir_file = split_file + '.itr'
 
-    # 读取ltr和itr文件，获取ltr和itr开始和结束位置
-    ltr_names, ltr_contigs = read_fasta_v1(ltr_file)
-    tir_names, tir_contigs = read_fasta_v1(tir_file)
-    LTR_info = {}
-    for ltr_name in ltr_names:
-        parts = ltr_name.split('\t')
-        orig_name = parts[0]
-        terminal_info = parts[-1]
-        LTR_info_parts = terminal_info.split('LTR')[1].split(' ')[0].replace('(', '').replace(')', '').split('..')
-        LTR_left_pos_parts = LTR_info_parts[0].split(',')
-        LTR_right_pos_parts = LTR_info_parts[1].split(',')
-        lLTR_start = int(LTR_left_pos_parts[0])
-        lLTR_end = int(LTR_left_pos_parts[1])
-        rLTR_start = int(LTR_right_pos_parts[1])
-        rLTR_end = int(LTR_right_pos_parts[0])
-        LTR_info[orig_name] = (lLTR_start, lLTR_end, rLTR_start, rLTR_end)
-    TIR_info = {}
-    for tir_name in tir_names:
-        parts = tir_name.split('\t')
-        orig_name = parts[0]
-        terminal_info = parts[-1]
-        TIR_info_parts = terminal_info.split('ITR')[1].split(' ')[0].replace('(', '').replace(')', '').split('..')
-        TIR_left_pos_parts = TIR_info_parts[0].split(',')
-        TIR_right_pos_parts = TIR_info_parts[1].split(',')
-        lTIR_start = int(TIR_left_pos_parts[0])
-        lTIR_end = int(TIR_left_pos_parts[1])
-        rTIR_start = int(TIR_right_pos_parts[1])
-        rTIR_end = int(TIR_right_pos_parts[0])
-        TIR_info[orig_name] = (lTIR_start, lTIR_end, rTIR_start, rTIR_end)
+        # 读取ltr和itr文件，获取ltr和itr开始和结束位置
+        ltr_names, ltr_contigs = read_fasta_v1(ltr_file)
+        tir_names, tir_contigs = read_fasta_v1(tir_file)
+        LTR_info = {}
+        for ltr_name in ltr_names:
+            parts = ltr_name.split('\t')
+            orig_name = parts[0]
+            terminal_info = parts[-1]
+            LTR_info_parts = terminal_info.split('LTR')[1].split(' ')[0].replace('(', '').replace(')', '').split('..')
+            LTR_left_pos_parts = LTR_info_parts[0].split(',')
+            LTR_right_pos_parts = LTR_info_parts[1].split(',')
+            lLTR_start = int(LTR_left_pos_parts[0])
+            lLTR_end = int(LTR_left_pos_parts[1])
+            rLTR_start = int(LTR_right_pos_parts[1])
+            rLTR_end = int(LTR_right_pos_parts[0])
+            LTR_info[orig_name] = (lLTR_start, lLTR_end, rLTR_start, rLTR_end)
+        TIR_info = {}
+        for tir_name in tir_names:
+            parts = tir_name.split('\t')
+            orig_name = parts[0]
+            terminal_info = parts[-1]
+            TIR_info_parts = terminal_info.split('ITR')[1].split(' ')[0].replace('(', '').replace(')', '').split('..')
+            TIR_left_pos_parts = TIR_info_parts[0].split(',')
+            TIR_right_pos_parts = TIR_info_parts[1].split(',')
+            lTIR_start = int(TIR_left_pos_parts[0])
+            lTIR_end = int(TIR_left_pos_parts[1])
+            rTIR_start = int(TIR_right_pos_parts[1])
+            rTIR_end = int(TIR_right_pos_parts[0])
+            TIR_info[orig_name] = (lTIR_start, lTIR_end, rTIR_start, rTIR_end)
 
-    # 更新split_file的header,添加两列 LTR:1-206,4552-4757  TIR:1-33,3869-3836
-    update_split_file = split_file + '.updated'
-    update_contigs = {}
-    names, contigs = read_fasta_v1(split_file)
-    for name in names:
-        orig_name = name.split('\t')[0]
-        LTR_str = 'LTR:'
-        if LTR_info.__contains__(orig_name):
-            lLTR_start, lLTR_end, rLTR_start, rLTR_end = LTR_info[orig_name]
-            LTR_str += str(lLTR_start) + '-' + str(lLTR_end) + ',' + str(rLTR_start) + '-' + str(rLTR_end)
-        TIR_str = 'TIR:'
-        if TIR_info.__contains__(orig_name):
-            lTIR_start, lTIR_end, rTIR_start, rTIR_end = TIR_info[orig_name]
-            TIR_str += str(lTIR_start) + '-' + str(lTIR_end) + ',' + str(rTIR_start) + '-' + str(rTIR_end)
-        update_name = name + '\t' + LTR_str + '\t' + TIR_str
-        update_contigs[update_name] = contigs[name]
-    store_fasta(update_contigs, update_split_file)
-    return update_split_file
+        # 更新split_file的header,添加两列 LTR:1-206,4552-4757  TIR:1-33,3869-3836
+        update_split_file = split_file + '.updated'
+        update_contigs = {}
+        names, contigs = read_fasta_v1(split_file)
+        for name in names:
+            orig_name = name.split('\t')[0]
+            LTR_str = 'LTR:'
+            if LTR_info.__contains__(orig_name):
+                lLTR_start, lLTR_end, rLTR_start, rLTR_end = LTR_info[orig_name]
+                LTR_str += str(lLTR_start) + '-' + str(lLTR_end) + ',' + str(rLTR_start) + '-' + str(rLTR_end)
+            TIR_str = 'TIR:'
+            if TIR_info.__contains__(orig_name):
+                lTIR_start, lTIR_end, rTIR_start, rTIR_end = TIR_info[orig_name]
+                TIR_str += str(lTIR_start) + '-' + str(lTIR_end) + ',' + str(rTIR_start) + '-' + str(rTIR_end)
+            update_name = name + '\t' + LTR_str + '\t' + TIR_str
+            update_contigs[update_name] = contigs[name]
+        store_fasta(update_contigs, update_split_file)
+        return update_split_file
+    except Exception as e:
+        return e  # 将异常对象返回以便在主程序中处理
+
 
 
 def connect_LTR(repbase_path):
@@ -683,24 +745,48 @@ def connect_LTR(repbase_path):
 
 def generate_terminal_info(data_path, work_dir, tool_dir, threads):
     output_dir = work_dir + '/temp'
-
     # 将文件切分成threads块
     split_files = split_fasta(data_path, output_dir, threads)
-    # 并行化识别LTR和TIR
-    ex = ProcessPoolExecutor(threads)
-    jobs = []
-    for split_file in split_files:
-        job = ex.submit(identify_terminals, split_file, output_dir, tool_dir)
-        jobs.append(job)
-    ex.shutdown(wait=True)
 
+    # 并行化识别LTR和TIR
     cur_update_path = data_path + '.update'
     os.system('rm -f ' + cur_update_path)
-    for job in as_completed(jobs):
-        update_split_file = job.result()
-        os.system('cat ' + update_split_file + ' >> ' + cur_update_path)
+    with ProcessPoolExecutor(threads) as executor:
+        futures = []
+        for split_file in split_files:
+            future = executor.submit(identify_terminals, split_file, output_dir, tool_dir)
+            futures.append(future)
+        executor.shutdown(wait=True)
 
-    return cur_update_path
+        is_exit = False
+        for future in as_completed(futures):
+            update_split_file = future.result()
+            if isinstance(update_split_file, str):
+                os.system('cat ' + update_split_file + ' >> ' + cur_update_path)
+            else:
+                print(f"An error occurred: {update_split_file}")
+                is_exit = True
+                break
+        if is_exit:
+            print('Error occur, exit...')
+            exit(1)
+        else:
+            os.system('mv ' + cur_update_path + ' ' + data_path)
+
+    # ex = ProcessPoolExecutor(threads)
+    # jobs = []
+    # for split_file in split_files:
+    #     job = ex.submit(identify_terminals, split_file, output_dir, tool_dir)
+    #     jobs.append(job)
+    # ex.shutdown(wait=True)
+    #
+    # cur_update_path = data_path + '.update'
+    # os.system('rm -f ' + cur_update_path)
+    # for job in as_completed(jobs):
+    #     update_split_file = job.result()
+    #     os.system('cat ' + update_split_file + ' >> ' + cur_update_path)
+    # os.system('mv ' + cur_update_path + ' ' + data_path)
+    return data_path
 
 def generate_domain_info(input_path, domain_path, work_dir, threads):
     output_table = input_path + '.domain'
@@ -771,274 +857,289 @@ def get_domain_info(cons, lib, output_table, threads, temp_dir):
 
     # 2. 生成一个query与domain的最佳比对表
     os.system("echo 'TE_name\tdomain_name\tTE_start\tTE_end\tdomain_start\tdomain_end\n' > " + output_table)
+    is_exit = False
     for job in as_completed(jobs):
         cur_table = job.result()
-        os.system('cat ' + cur_table + ' >> ' + output_table)
+        if isinstance(cur_table, str):
+            os.system('cat ' + cur_table + ' >> ' + output_table)
+        else:
+            print(f"An error occurred: {cur_table}")
+            is_exit = True
+            break
+    if is_exit:
+        print('Error occur, exit...')
+        exit(1)
+
 
 def multiple_alignment_blastx_v1(repeats_path, merge_distance):
-    split_repeats_path = repeats_path[0]
-    protein_db_path = repeats_path[1]
-    blastx2Results_path = repeats_path[2]
-    cur_table = repeats_path[3]
-    align_command = 'blastx -db ' + protein_db_path + ' -num_threads ' \
-                    + str(1) + ' -evalue 1e-20 -query ' + split_repeats_path + ' -outfmt 6 > ' + blastx2Results_path
-    os.system(align_command)
+    try:
+        split_repeats_path = repeats_path[0]
+        protein_db_path = repeats_path[1]
+        blastx2Results_path = repeats_path[2]
+        cur_table = repeats_path[3]
+        align_command = 'blastx -db ' + protein_db_path + ' -num_threads ' \
+                        + str(1) + ' -evalue 1e-20 -query ' + split_repeats_path + ' -outfmt 6 > ' + blastx2Results_path
+        #os.system(align_command)
+        run_command(align_command)
 
-    fixed_extend_base_threshold = merge_distance
-    # 将分段的blastx比对合并起来
-    query_names, query_contigs = read_fasta(split_repeats_path)
+        fixed_extend_base_threshold = merge_distance
+        # 将分段的blastx比对合并起来
+        query_names, query_contigs = read_fasta(split_repeats_path)
 
-    # parse blastn output, determine the repeat boundary
-    # query_records = {query_name: {subject_name: [(q_start, q_end, s_start, s_end), (q_start, q_end, s_start, s_end), (q_start, q_end, s_start, s_end)] }}
-    query_records = {}
-    with open(blastx2Results_path, 'r') as f_r:
-        for idx, line in enumerate(f_r):
-            # print('current line idx: %d' % (idx))
-            parts = line.split('\t')
-            query_name = parts[0]
-            subject_name = parts[1]
-            identity = float(parts[2])
-            alignment_len = int(parts[3])
-            q_start = int(parts[6])
-            q_end = int(parts[7])
-            s_start = int(parts[8])
-            s_end = int(parts[9])
-            if not query_records.__contains__(query_name):
-                query_records[query_name] = {}
+        # parse blastn output, determine the repeat boundary
+        # query_records = {query_name: {subject_name: [(q_start, q_end, s_start, s_end), (q_start, q_end, s_start, s_end), (q_start, q_end, s_start, s_end)] }}
+        query_records = {}
+        with open(blastx2Results_path, 'r') as f_r:
+            for idx, line in enumerate(f_r):
+                # print('current line idx: %d' % (idx))
+                parts = line.split('\t')
+                query_name = parts[0]
+                subject_name = parts[1]
+                identity = float(parts[2])
+                alignment_len = int(parts[3])
+                q_start = int(parts[6])
+                q_end = int(parts[7])
+                s_start = int(parts[8])
+                s_end = int(parts[9])
+                if not query_records.__contains__(query_name):
+                    query_records[query_name] = {}
+                subject_dict = query_records[query_name]
+
+                if not subject_dict.__contains__(subject_name):
+                    subject_dict[subject_name] = []
+                subject_pos = subject_dict[subject_name]
+                subject_pos.append((q_start, q_end, s_start, s_end))
+        f_r.close()
+
+        keep_longest_query = {}
+        longest_repeats = {}
+        for idx, query_name in enumerate(query_records.keys()):
+            query_len = len(query_contigs[query_name])
+            # print('total query size: %d, current query name: %s, idx: %d' % (len(query_records), query_name, idx))
+
             subject_dict = query_records[query_name]
 
-            if not subject_dict.__contains__(subject_name):
-                subject_dict[subject_name] = []
-            subject_pos = subject_dict[subject_name]
-            subject_pos.append((q_start, q_end, s_start, s_end))
-    f_r.close()
+            # if there are more than one longest query overlap with the final longest query over 90%,
+            # then it probably the true TE
+            longest_queries = []
+            for subject_name in subject_dict.keys():
+                subject_pos = subject_dict[subject_name]
+                # subject_pos.sort(key=lambda x: (x[2], x[3]))
 
-    keep_longest_query = {}
-    longest_repeats = {}
-    for idx, query_name in enumerate(query_records.keys()):
-        query_len = len(query_contigs[query_name])
-        # print('total query size: %d, current query name: %s, idx: %d' % (len(query_records), query_name, idx))
+                # cluster all closed fragments, split forward and reverse records
+                forward_pos = []
+                reverse_pos = []
+                for pos_item in subject_pos:
+                    if pos_item[0] > pos_item[1]:
+                        reverse_pos.append(pos_item)
+                    else:
+                        forward_pos.append(pos_item)
+                forward_pos.sort(key=lambda x: (x[2], x[3]))
+                reverse_pos.sort(key=lambda x: (-x[0], -x[1]))
 
-        subject_dict = query_records[query_name]
-
-        # if there are more than one longest query overlap with the final longest query over 90%,
-        # then it probably the true TE
-        longest_queries = []
-        for subject_name in subject_dict.keys():
-            subject_pos = subject_dict[subject_name]
-            # subject_pos.sort(key=lambda x: (x[2], x[3]))
-
-            # cluster all closed fragments, split forward and reverse records
-            forward_pos = []
-            reverse_pos = []
-            for pos_item in subject_pos:
-                if pos_item[0] > pos_item[1]:
-                    reverse_pos.append(pos_item)
-                else:
-                    forward_pos.append(pos_item)
-            forward_pos.sort(key=lambda x: (x[2], x[3]))
-            reverse_pos.sort(key=lambda x: (-x[0], -x[1]))
-
-            clusters = {}
-            cluster_index = 0
-            for k, frag in enumerate(forward_pos):
-                if not clusters.__contains__(cluster_index):
-                    clusters[cluster_index] = []
-                cur_cluster = clusters[cluster_index]
-                if k == 0:
-                    cur_cluster.append(frag)
-                else:
-                    is_closed = False
-                    for exist_frag in reversed(cur_cluster):
-                        if (frag[0] - exist_frag[1] < fixed_extend_base_threshold):
-                            is_closed = True
-                            break
-                    if is_closed:
+                clusters = {}
+                cluster_index = 0
+                for k, frag in enumerate(forward_pos):
+                    if not clusters.__contains__(cluster_index):
+                        clusters[cluster_index] = []
+                    cur_cluster = clusters[cluster_index]
+                    if k == 0:
                         cur_cluster.append(frag)
                     else:
-                        cluster_index += 1
-                        if not clusters.__contains__(cluster_index):
-                            clusters[cluster_index] = []
-                        cur_cluster = clusters[cluster_index]
-                        cur_cluster.append(frag)
+                        is_closed = False
+                        for exist_frag in reversed(cur_cluster):
+                            if (frag[0] - exist_frag[1] < fixed_extend_base_threshold):
+                                is_closed = True
+                                break
+                        if is_closed:
+                            cur_cluster.append(frag)
+                        else:
+                            cluster_index += 1
+                            if not clusters.__contains__(cluster_index):
+                                clusters[cluster_index] = []
+                            cur_cluster = clusters[cluster_index]
+                            cur_cluster.append(frag)
 
-            cluster_index += 1
-            for k, frag in enumerate(reverse_pos):
-                if not clusters.__contains__(cluster_index):
-                    clusters[cluster_index] = []
-                cur_cluster = clusters[cluster_index]
-                if k == 0:
-                    cur_cluster.append(frag)
-                else:
-                    is_closed = False
-                    for exist_frag in reversed(cur_cluster):
-                        if (exist_frag[1] - frag[0] < fixed_extend_base_threshold):
-                            is_closed = True
-                            break
-                    if is_closed:
+                cluster_index += 1
+                for k, frag in enumerate(reverse_pos):
+                    if not clusters.__contains__(cluster_index):
+                        clusters[cluster_index] = []
+                    cur_cluster = clusters[cluster_index]
+                    if k == 0:
                         cur_cluster.append(frag)
                     else:
-                        cluster_index += 1
-                        if not clusters.__contains__(cluster_index):
-                            clusters[cluster_index] = []
-                        cur_cluster = clusters[cluster_index]
-                        cur_cluster.append(frag)
+                        is_closed = False
+                        for exist_frag in reversed(cur_cluster):
+                            if (exist_frag[1] - frag[0] < fixed_extend_base_threshold):
+                                is_closed = True
+                                break
+                        if is_closed:
+                            cur_cluster.append(frag)
+                        else:
+                            cluster_index += 1
+                            if not clusters.__contains__(cluster_index):
+                                clusters[cluster_index] = []
+                            cur_cluster = clusters[cluster_index]
+                            cur_cluster.append(frag)
 
-            for cluster_index in clusters.keys():
-                cur_cluster = clusters[cluster_index]
-                cur_cluster.sort(key=lambda x: (x[2], x[3]))
+                for cluster_index in clusters.keys():
+                    cur_cluster = clusters[cluster_index]
+                    cur_cluster.sort(key=lambda x: (x[2], x[3]))
 
-                cluster_longest_query_start = -1
-                cluster_longest_query_end = -1
-                cluster_longest_query_len = -1
+                    cluster_longest_query_start = -1
+                    cluster_longest_query_end = -1
+                    cluster_longest_query_len = -1
 
-                cluster_longest_subject_start = -1
-                cluster_longest_subject_end = -1
-                cluster_longest_subject_len = -1
+                    cluster_longest_subject_start = -1
+                    cluster_longest_subject_end = -1
+                    cluster_longest_subject_len = -1
 
-                cluster_extend_num = 0
+                    cluster_extend_num = 0
 
-                # print('subject pos size: %d' %(len(cur_cluster)))
-                # record visited fragments
-                visited_frag = {}
-                for i in range(len(cur_cluster)):
-                    # keep a longest query start from each fragment
-                    origin_frag = cur_cluster[i]
-                    if visited_frag.__contains__(origin_frag):
-                        continue
-                    cur_frag_len = abs(origin_frag[1] - origin_frag[0])
-                    cur_longest_query_len = cur_frag_len
-                    longest_query_start = origin_frag[0]
-                    longest_query_end = origin_frag[1]
-                    longest_subject_start = origin_frag[2]
-                    longest_subject_end = origin_frag[3]
-
-                    cur_extend_num = 0
-
-                    visited_frag[origin_frag] = 1
-                    # try to extend query
-                    for j in range(i + 1, len(cur_cluster)):
-                        ext_frag = cur_cluster[j]
-                        if visited_frag.__contains__(ext_frag):
+                    # print('subject pos size: %d' %(len(cur_cluster)))
+                    # record visited fragments
+                    visited_frag = {}
+                    for i in range(len(cur_cluster)):
+                        # keep a longest query start from each fragment
+                        origin_frag = cur_cluster[i]
+                        if visited_frag.__contains__(origin_frag):
                             continue
+                        cur_frag_len = abs(origin_frag[1] - origin_frag[0])
+                        cur_longest_query_len = cur_frag_len
+                        longest_query_start = origin_frag[0]
+                        longest_query_end = origin_frag[1]
+                        longest_subject_start = origin_frag[2]
+                        longest_subject_end = origin_frag[3]
 
-                        # could extend
-                        # extend right
-                        if ext_frag[3] > longest_subject_end:
-                            # judge query direction
-                            if longest_query_start < longest_query_end and ext_frag[0] < ext_frag[1]:
-                                # +
-                                if ext_frag[1] > longest_query_end:
-                                    # forward extend
-                                    if ext_frag[0] - longest_query_end < fixed_extend_base_threshold and ext_frag[
-                                        2] - longest_subject_end < fixed_extend_base_threshold / 3:
-                                        # update the longest path
-                                        longest_query_start = longest_query_start
-                                        longest_query_end = ext_frag[1]
-                                        longest_subject_start = longest_subject_start if longest_subject_start < \
-                                                                                         ext_frag[
-                                                                                             2] else ext_frag[2]
-                                        longest_subject_end = ext_frag[3]
-                                        cur_longest_query_len = longest_query_end - longest_query_start
-                                        cur_extend_num += 1
-                                        visited_frag[ext_frag] = 1
-                                    elif ext_frag[0] - longest_query_end >= fixed_extend_base_threshold:
-                                        break
-                            elif longest_query_start > longest_query_end and ext_frag[0] > ext_frag[1]:
-                                # reverse
-                                if ext_frag[1] < longest_query_end:
-                                    # reverse extend
-                                    if longest_query_end - ext_frag[0] < fixed_extend_base_threshold and ext_frag[
-                                        2] - longest_subject_end < fixed_extend_base_threshold / 3:
-                                        # update the longest path
-                                        longest_query_start = longest_query_start
-                                        longest_query_end = ext_frag[1]
-                                        longest_subject_start = longest_subject_start if longest_subject_start < \
-                                                                                         ext_frag[
-                                                                                             2] else ext_frag[2]
-                                        longest_subject_end = ext_frag[3]
-                                        cur_longest_query_len = longest_query_start - longest_query_end
-                                        cur_extend_num += 1
-                                        visited_frag[ext_frag] = 1
-                                    elif longest_query_end - ext_frag[0] >= fixed_extend_base_threshold:
-                                        break
-                    if cur_longest_query_len > cluster_longest_query_len:
-                        cluster_longest_query_start = longest_query_start
-                        cluster_longest_query_end = longest_query_end
-                        cluster_longest_query_len = cur_longest_query_len
+                        cur_extend_num = 0
 
-                        cluster_longest_subject_start = longest_subject_start
-                        cluster_longest_subject_end = longest_subject_end
-                        cluster_longest_subject_len = longest_subject_end - longest_subject_start
+                        visited_frag[origin_frag] = 1
+                        # try to extend query
+                        for j in range(i + 1, len(cur_cluster)):
+                            ext_frag = cur_cluster[j]
+                            if visited_frag.__contains__(ext_frag):
+                                continue
 
-                        cluster_extend_num = cur_extend_num
-                # keep this longest query
-                if cluster_longest_query_len != -1:
-                    longest_queries.append((cluster_longest_query_start, cluster_longest_query_end,
-                                            cluster_longest_query_len, cluster_longest_subject_start,
-                                            cluster_longest_subject_end, cluster_longest_subject_len, subject_name,
-                                            cluster_extend_num))
+                            # could extend
+                            # extend right
+                            if ext_frag[3] > longest_subject_end:
+                                # judge query direction
+                                if longest_query_start < longest_query_end and ext_frag[0] < ext_frag[1]:
+                                    # +
+                                    if ext_frag[1] > longest_query_end:
+                                        # forward extend
+                                        if ext_frag[0] - longest_query_end < fixed_extend_base_threshold and ext_frag[
+                                            2] - longest_subject_end < fixed_extend_base_threshold / 3:
+                                            # update the longest path
+                                            longest_query_start = longest_query_start
+                                            longest_query_end = ext_frag[1]
+                                            longest_subject_start = longest_subject_start if longest_subject_start < \
+                                                                                             ext_frag[
+                                                                                                 2] else ext_frag[2]
+                                            longest_subject_end = ext_frag[3]
+                                            cur_longest_query_len = longest_query_end - longest_query_start
+                                            cur_extend_num += 1
+                                            visited_frag[ext_frag] = 1
+                                        elif ext_frag[0] - longest_query_end >= fixed_extend_base_threshold:
+                                            break
+                                elif longest_query_start > longest_query_end and ext_frag[0] > ext_frag[1]:
+                                    # reverse
+                                    if ext_frag[1] < longest_query_end:
+                                        # reverse extend
+                                        if longest_query_end - ext_frag[0] < fixed_extend_base_threshold and ext_frag[
+                                            2] - longest_subject_end < fixed_extend_base_threshold / 3:
+                                            # update the longest path
+                                            longest_query_start = longest_query_start
+                                            longest_query_end = ext_frag[1]
+                                            longest_subject_start = longest_subject_start if longest_subject_start < \
+                                                                                             ext_frag[
+                                                                                                 2] else ext_frag[2]
+                                            longest_subject_end = ext_frag[3]
+                                            cur_longest_query_len = longest_query_start - longest_query_end
+                                            cur_extend_num += 1
+                                            visited_frag[ext_frag] = 1
+                                        elif longest_query_end - ext_frag[0] >= fixed_extend_base_threshold:
+                                            break
+                        if cur_longest_query_len > cluster_longest_query_len:
+                            cluster_longest_query_start = longest_query_start
+                            cluster_longest_query_end = longest_query_end
+                            cluster_longest_query_len = cur_longest_query_len
 
-        # we now consider, we should take some sequences from longest_queries to represent this query sequence.
-        # we take the longest sequence by length, if the latter sequence overlap with the former sequence largely (50%),
-        # continue find next sequence until the ratio of query sequence over 90% or no more sequences.
-        longest_queries.sort(key=lambda x: -x[2])
-        keep_longest_query[query_name] = longest_queries
-    # print(keep_longest_query)
-    # 记录存成table,去掉冗余记录（后一条序列的50%以上的区域在前一条内）
-    with open(cur_table, 'w') as f_save:
-        for query_name in keep_longest_query.keys():
-            domain_array = keep_longest_query[query_name]
-            # for domain_info in domain_array:
-            #     f_save.write(query_name+'\t'+str(domain_info[6])+'\t'+str(domain_info[0])+'\t'+str(domain_info[1])+'\t'+str(domain_info[3])+'\t'+str(domain_info[4])+'\n')
-            merge_domains = []
-            # 对domain_array进行合并
-            domain_array.sort(key=lambda x: -x[2])
-            for domain_info in domain_array:
-                if len(merge_domains) == 0:
-                    merge_domains.append(domain_info)
-                else:
-                    is_new_domain = True
-                    for pre_domain in merge_domains:
-                        pre_start = pre_domain[0]
-                        pre_end = pre_domain[1]
-                        # 计算overlap
-                        if pre_start > pre_end:
-                            tmp = pre_start
-                            pre_start = pre_end
-                            pre_end = tmp
-                        cur_start = domain_info[0]
-                        cur_end = domain_info[1]
-                        if cur_start > cur_end:
-                            tmp = cur_start
-                            cur_start = cur_end
-                            cur_end = tmp
-                        if cur_end >= pre_start and cur_end <= pre_end:
-                            if cur_start <= pre_start:
-                                overlap = cur_end - pre_start
-                            else:
-                                overlap = cur_end - cur_start
-                        elif cur_end > pre_end:
-                            if cur_start >= pre_start and cur_start <= pre_end:
-                                overlap = pre_end - cur_start
+                            cluster_longest_subject_start = longest_subject_start
+                            cluster_longest_subject_end = longest_subject_end
+                            cluster_longest_subject_len = longest_subject_end - longest_subject_start
+
+                            cluster_extend_num = cur_extend_num
+                    # keep this longest query
+                    if cluster_longest_query_len != -1:
+                        longest_queries.append((cluster_longest_query_start, cluster_longest_query_end,
+                                                cluster_longest_query_len, cluster_longest_subject_start,
+                                                cluster_longest_subject_end, cluster_longest_subject_len, subject_name,
+                                                cluster_extend_num))
+
+            # we now consider, we should take some sequences from longest_queries to represent this query sequence.
+            # we take the longest sequence by length, if the latter sequence overlap with the former sequence largely (50%),
+            # continue find next sequence until the ratio of query sequence over 90% or no more sequences.
+            longest_queries.sort(key=lambda x: -x[2])
+            keep_longest_query[query_name] = longest_queries
+        # print(keep_longest_query)
+        # 记录存成table,去掉冗余记录（后一条序列的50%以上的区域在前一条内）
+        with open(cur_table, 'w') as f_save:
+            for query_name in keep_longest_query.keys():
+                domain_array = keep_longest_query[query_name]
+                # for domain_info in domain_array:
+                #     f_save.write(query_name+'\t'+str(domain_info[6])+'\t'+str(domain_info[0])+'\t'+str(domain_info[1])+'\t'+str(domain_info[3])+'\t'+str(domain_info[4])+'\n')
+                merge_domains = []
+                # 对domain_array进行合并
+                domain_array.sort(key=lambda x: -x[2])
+                for domain_info in domain_array:
+                    if len(merge_domains) == 0:
+                        merge_domains.append(domain_info)
+                    else:
+                        is_new_domain = True
+                        for pre_domain in merge_domains:
+                            pre_start = pre_domain[0]
+                            pre_end = pre_domain[1]
+                            # 计算overlap
+                            if pre_start > pre_end:
+                                tmp = pre_start
+                                pre_start = pre_end
+                                pre_end = tmp
+                            cur_start = domain_info[0]
+                            cur_end = domain_info[1]
+                            if cur_start > cur_end:
+                                tmp = cur_start
+                                cur_start = cur_end
+                                cur_end = tmp
+                            if cur_end >= pre_start and cur_end <= pre_end:
+                                if cur_start <= pre_start:
+                                    overlap = cur_end - pre_start
+                                else:
+                                    overlap = cur_end - cur_start
+                            elif cur_end > pre_end:
+                                if cur_start >= pre_start and cur_start <= pre_end:
+                                    overlap = pre_end - cur_start
+                                else:
+                                    overlap = 0
                             else:
                                 overlap = 0
-                        else:
-                            overlap = 0
 
-                        if float(overlap / domain_info[2]) > 0.5:
-                            is_new_domain = False
-                    if is_new_domain:
-                        merge_domains.append(domain_info)
+                            if float(overlap / domain_info[2]) > 0.5:
+                                is_new_domain = False
+                        if is_new_domain:
+                            merge_domains.append(domain_info)
 
-            for domain_info in merge_domains:
-                f_save.write(query_name + '\t' + str(domain_info[6]) + '\t' + str(domain_info[0]) + '\t' + str(
-                    domain_info[1]) + '\t' + str(domain_info[3]) + '\t' + str(domain_info[4]) + '\n')
+                for domain_info in merge_domains:
+                    f_save.write(query_name + '\t' + str(domain_info[6]) + '\t' + str(domain_info[0]) + '\t' + str(
+                        domain_info[1]) + '\t' + str(domain_info[3]) + '\t' + str(domain_info[4]) + '\n')
 
-    f_save.close()
-    return cur_table
+        f_save.close()
+        return cur_table
+    except Exception as e:
+        return e
 
-def generate_TSD_info(all_repbase_path, ncbi_ref_info, work_dir, is_expanded, threads):
+def generate_TSD_info(all_repbase_path, ncbi_ref_info, work_dir, is_expanded, keep_raw, threads):
+    print('Preprocess: Start get TSD information')
     #Step1. 按照物种，统计序列
     names, contigs = read_fasta_v1(all_repbase_path)
     speices_TE_contigs = {}
@@ -1101,9 +1202,9 @@ def generate_TSD_info(all_repbase_path, ncbi_ref_info, work_dir, is_expanded, th
         for line in f_r:
             if line.startswith('#'):
                 continue
-            species_name = line.split('\t')[2]
-            genome = line.split('\t')[3]
-            is_plant = line.split('\t')[5]
+            species_name = line.split('\t')[0]
+            genome = line.split('\t')[1]
+            is_plant = line.split('\t')[2]
             species_genome[species_name] = (genome, is_plant)
             keep_species_names.add(species_name)
 
@@ -1145,16 +1246,38 @@ def generate_TSD_info(all_repbase_path, ncbi_ref_info, work_dir, is_expanded, th
             flanking_len = 20
             final_repbase_path = expandRepBase(repbase_path, genome_path, temp_dir, threads, flanking_len, is_plant, species, is_expanded=is_expanded)
             os.system('mv ' + final_repbase_path + ' ' + processed_species_dir)
-    # 合并所有处理的文件
-    output_file = work_dir + '/repbase_processed.ref'
-    with open(output_file, 'w') as out:
+    # 合并所有具有TSD的文件
+    tsd_file = work_dir + '/repbase.tsd_merge.ref'
+    with open(tsd_file, 'w') as out:
         for filename in os.listdir(processed_species_dir):
             file_path = os.path.join(processed_species_dir, filename)
             if os.path.isfile(file_path):
                 with open(file_path, 'r') as input_file:
                     content = input_file.read()
                     out.write(content)
-    return output_file
+    print('Preprocess: End get TSD information')
+
+    if keep_raw == 1:
+        keep_file = work_dir + '/repbase.tsd_processed.ref'
+        tsd_names, tsd_contigs = read_fasta_v1(tsd_file)
+        seq_name_to_tsd_header = {}
+        for tsd_name in tsd_names:
+            parts = tsd_name.split('\t')
+            seq_name = parts[0]
+            seq_name_to_tsd_header[seq_name] = tsd_name
+        with open(keep_file, 'w') as f_save:
+            for name in names:
+                seq_name = name.split('\t')[0]
+                if seq_name_to_tsd_header.__contains__(seq_name):
+                    new_name = seq_name_to_tsd_header[seq_name]
+                else:
+                    new_name = name + '\t' + 'TSD:' + '\t' + 'TSD_len:0'
+                f_save.write('>'+new_name+'\n'+contigs[name]+'\n')
+        os.system('mv ' + keep_file + ' ' + all_repbase_path)
+    else:
+        os.system('mv ' + tsd_file + ' ' + all_repbase_path)
+    return all_repbase_path
+
 
 def search_confident_tsd(orig_seq, raw_tir_start, raw_tir_end, tsd_search_distance, query_name, plant):
     #将坐标都换成以0开始的
@@ -1748,3 +1871,73 @@ def split2TrainTest(total_path, train_path, test_path):
         test_contigs[name] = contigs[name]
     store_fasta(train_contigs, train_path)
     store_fasta(test_contigs, test_path)
+
+def get_species_TE(total_repbase, mazie_path, mazie_merge_path, species_name):
+    names, contigs = read_fasta_v1(total_repbase)
+    merge_contigs = {}
+    new_contigs = {}
+    for name in names:
+        parts = name.split('\t')
+        seq_name = parts[0]
+        label = parts[1]
+        if parts[2] == species_name:
+            merge_contigs[seq_name+'#'+label] = contigs[name]
+            new_contigs[name] = contigs[name]
+    store_fasta(merge_contigs, mazie_merge_path)
+    store_fasta(new_contigs, mazie_path)
+
+def extract_60_species(total_repbase, train_species_path, test_species_path):
+    names, contigs = read_fasta_v1(total_repbase)
+    species_names = set()
+    for name in names:
+        parts = name.split('\t')
+        species_name = parts[2]
+        species_names.add(species_name)
+    species_names = list(species_names)
+    train_contigs = {}
+    test_contigs = {}
+    # 随机打乱列表
+    random.shuffle(species_names)
+    # 计算划分的索引位置
+    split_index = int(0.9 * len(species_names))
+    # 划分成90%和10%的两个列表
+    train_list = species_names[:split_index]
+    test_list = species_names[split_index:]
+    for name in names:
+        parts = name.split('\t')
+        seq_name = parts[0]
+        label = parts[1]
+        species_name = parts[2]
+        if species_name in train_list:
+            train_contigs[name] = contigs[name]
+        if species_name in test_list:
+            test_contigs[name] = contigs[name]
+    store_fasta(train_contigs, train_species_path)
+    store_fasta(test_contigs, test_species_path)
+    print(len(train_list))
+    print(len(test_list))
+
+def get_other_species_from_raw_repbase(raw_repbase, total_repbase, train_species_path, test_species_path):
+    raw_names, raw_contigs = read_fasta_v1(raw_repbase)
+    names, contigs = read_fasta_v1(total_repbase)
+    test_contigs = {}
+
+    name_set = set()
+    for name in names:
+        parts = name.split('\t')
+        seq_name = parts[0]
+        name_set.add(seq_name)
+
+    current_name_set = set()
+    for raw_name in raw_names:
+        parts = raw_name.split('\t')
+        seq_name = parts[0]
+        if seq_name in name_set:
+            current_name_set.add(seq_name)
+        else:
+            test_contigs[raw_name] = raw_contigs[raw_name]
+    store_fasta(contigs, train_species_path)
+    store_fasta(test_contigs, test_species_path)
+    print(len(test_contigs))
+    print(len(name_set))
+    print(len(current_name_set))

@@ -31,6 +31,13 @@ class DataProcessor:
 
 
     def load_data(self, internal_kmer_sizes, terminal_kmer_sizes, data_path):
+        # 将输入文件拷贝到工作目录中
+        if not os.path.exists(data_path):
+            print('Input file not exist: ' + data_path)
+            exit(-1)
+        os.makedirs(config.work_dir, exist_ok=True)
+        os.system('cp ' + data_path + ' ' + config.work_dir)
+        data_path = config.work_dir + '/' + os.path.basename(data_path)
         domain_train_path = data_path + '.domain'
         data_path = self.preprocess_data(data_path, domain_train_path, self.work_dir,
                                                     self.project_dir, self.tool_dir, self.threads,
@@ -52,7 +59,8 @@ class DataProcessor:
                 # 使用TSD特征，但是TSD信息在数据集中不存在，则需要重新生成TSD特征信息
                 # 请确保修改 ‘data/ncbi_ref.info’ 文件中Genome Path为正确的位置信息
                 is_expanded = 0 # 只有在平衡Repbase数据集时，设置is_expanded=1，否则is_expanded=0
-                data = generate_TSD_info(data, project_dir+'/data/ncbi_ref.info', work_dir, is_expanded, threads)
+                keep_raw = 1 # 保留原始序列，默认为1。如果希望只保留具有TSD的序列，则设置为0。
+                data = generate_TSD_info(data, project_dir+'/data/genome.info', work_dir, is_expanded, keep_raw, threads)
             if use_domain != 0 and not os.path.exists(domain_train_path):
                 # 使用domain特征，但是domain信息文件却不存在，则需要重新比对生成domain信息
                 generate_domain_info(data, project_dir+'/data/RepeatPeps.lib', work_dir, threads)

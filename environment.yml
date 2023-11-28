@@ -1,4 +1,4 @@
-name: DeepTE
+name: NeuralTE
 channels:
   - bioconda
   - anaconda

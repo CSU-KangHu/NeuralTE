@@ -1,5 +1,0 @@
-biopython
-keras
-numpy
-itertools
-tensorflow

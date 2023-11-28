@@ -76,6 +76,7 @@ def main():
     # 请确保下面数据的header格式为Repbase格式，即'TE_name  Superfamily Species'，以'\t'分割
     cv_train_data_path = config.work_dir + "/repbase_total.ref"  # 交叉验证训练数据路径
     X, y, seq_names = data_processor.load_data(config.internal_kmer_sizes, config.terminal_kmer_sizes, cv_train_data_path)
+    X = X.reshape(X.shape[0], config.X_feature_len)
     print(X.shape, y.shape)
 
     # 实例化 CrossValidator 类

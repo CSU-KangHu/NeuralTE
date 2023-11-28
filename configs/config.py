@@ -4,6 +4,7 @@ import os
 from multiprocessing import cpu_count
 # 1.数据预处理参数
 ## 是否使用相应的特征进行分类，所有的特征已被证明对分类有帮助。
+use_kmers = 1   # 使用k-mer特征cp
 use_terminal = 1    # 使用LTR、TIR终端特征
 use_TSD = 1     # 使用TSD特征
 use_domain = 1  # 使用TE domain特征
@@ -42,12 +43,13 @@ max_tsd_length = 15
 # 获取CNN输入维度
 X_feature_len = 0
 # TE seq/internal_seq 维度
-for kmer_size in internal_kmer_sizes:
-    X_feature_len += pow(4, kmer_size)
-if use_terminal != 0:
-    for i in range(2):
-        for kmer_size in terminal_kmer_sizes:
-            X_feature_len += pow(4, kmer_size)
+if use_kmers != 0:
+    for kmer_size in internal_kmer_sizes:
+        X_feature_len += pow(4, kmer_size)
+    if use_terminal != 0:
+        for i in range(2):
+            for kmer_size in terminal_kmer_sizes:
+                X_feature_len += pow(4, kmer_size)
 if use_TSD != 0:
     X_feature_len += max_tsd_length * 4 + 1
 if use_domain != 0:

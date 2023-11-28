@@ -1,7 +1,10 @@
+import codecs
+import json
 import os.path
 import matplotlib
 matplotlib.use('pdf')
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, \
+    classification_report
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -9,23 +12,60 @@ from scipy.interpolate import griddata, interpolate
 from matplotlib import cm
 
 from configs import config
-from utils.data_util import read_fasta_v1, word_seq, generate_kmer_dic, generate_mat, store_fasta, replace_non_atcg
+from utils.data_util import read_fasta_v1, word_seq, generate_kmer_dic, generate_mat, store_fasta, replace_non_atcg, \
+    get_species_TE
 
+import tensorflow as tf
 
-def plot_confusion_matrix(y_pred, y_test, type='num'):
-    inverted_all_wicker_class = config.inverted_all_wicker_class
+# def multi_category_focal_loss1(alpha, gamma=2.0):
+#     """
+#     focal loss for multi category of multi label problem
+#     适用于多分类或多标签问题的focal loss
+#     alpha用于指定不同类别/标签的权重，数组大小需要与类别个数一致
+#     当你的数据集不同类别/标签之间存在偏斜，可以尝试适用本函数作为loss
+#     Usage:
+#      model.compile(loss=[multi_category_focal_loss1(alpha=[1,2,3,2], gamma=2)], metrics=["accuracy"], optimizer=adam)
+#     """
+#     epsilon = 1.e-7
+#     alpha = tf.constant(alpha, dtype=tf.float32)
+#     #alpha = tf.constant([[1],[1],[1],[1],[1]], dtype=tf.float32)
+#     #alpha = tf.constant_initializer(alpha)
+#     gamma = float(gamma)
+#     def multi_category_focal_loss1_fixed(y_true, y_pred):
+#         y_true = tf.cast(y_true, tf.float32)
+#         y_pred = tf.clip_by_value(y_pred, epsilon, 1. - epsilon)
+#         y_t = tf.multiply(y_true, y_pred) + tf.multiply(1-y_true, 1-y_pred)
+#         ce = -tf.log(y_t)
+#         weight = tf.pow(tf.subtract(1., y_t), gamma)
+#         fl = tf.matmul(tf.multiply(weight, ce), alpha)
+#         loss = tf.reduce_mean(fl)
+#         return loss
+#     return multi_category_focal_loss1_fixed
+
+from keras import backend as K
+def focal_loss(gamma=2.):
+    def focal_loss_fixed(y_true, y_pred):
+        pt_1 = tf.where(tf.equal(y_true, 1), y_pred, tf.ones_like(y_pred))
+        return -K.sum(K.pow(1. - pt_1, gamma) * K.log(pt_1))
+    return focal_loss_fixed
+
+def plot_confusion_matrix(y_pred, y_test):
+
     y_pred_set = set(y_pred)
     y_test_set = set(y_test)
     class_list = list(y_pred_set | y_test_set)
+    #class_list = list(y_test_set)
+
     class_names = []
-    for class_num in class_list:
-        if type == 'num':
-            label = inverted_all_wicker_class[class_num]
-        else:
+    all_class_list = list(config.all_wicker_class.keys())
+    for class_num in all_class_list:
+        if class_num in class_list:
             label = class_num
-        class_names.append(label)
+            class_names.append(label)
     # 计算混淆矩阵
     conf_matrix = confusion_matrix(y_test, y_pred, labels=class_names)
+    class_report = classification_report(y_test, y_pred)
+    print(class_report)
 
     # 绘制混淆矩阵图表
     plt.figure(figsize=(15, 15))
@@ -71,7 +111,7 @@ def get_metrics(y_pred, y_test, seq_names):
             else:
                 store_results_dic[seq_name] = str(seq_name) + ',' + 'Unknown'
 
-        with open(config.work_dir + '/test_results.txt', 'w+') as opt:
+        with open(config.work_dir + '/results.txt', 'w+') as opt:
             for eachid in store_results_dic:
                 opt.write(store_results_dic[eachid] + '\n')
 
@@ -84,8 +124,16 @@ def get_metrics(y_pred, y_test, seq_names):
     # 计算F1值
     f1 = f1_score(y_test, predicted_classes_list, average='macro')
 
+    # 将数值标签转为字符标签
+    inverted_all_wicker_class = config.inverted_all_wicker_class
+    predicted_labels = []
+    test_labels = []
+    for label_num in predicted_classes_list:
+        predicted_labels.append(inverted_all_wicker_class[label_num])
+    for y_num in y_test:
+        test_labels.append(inverted_all_wicker_class[y_num])
     # plot confusion matrix
-    plot_confusion_matrix(predicted_classes_list, y_test)
+    plot_confusion_matrix(predicted_labels, test_labels)
 
     return round(accuracy, 4), round(precision, 4), round(recall, 4), round(f1, 4)
 
@@ -137,7 +185,7 @@ def get_metrics_by_label(y_test, y_pred):
     f1 = f1_score(y_test, y_pred, average='macro')
     print("F1:", round(f1, 4))
 
-    plot_confusion_matrix(y_pred, y_test, type='class')
+    plot_confusion_matrix(y_pred, y_test)
 
 def evaluate_RepeatClassifier(classified_path):
     # 2. 在test数据集上评估RepeatClassifier
@@ -216,6 +264,7 @@ def evaluate_RepeatClassifier(classified_path):
     y_test = np.array(y_labels)
     y_pred = np.array(y_predicts)
     get_metrics_by_label(y_test, y_pred)
+    return RC_name_labels
 
 
 def transform_TERL_data(train_path, test_path, data_dir):
@@ -341,8 +390,9 @@ def evaluate_DeepTE(test_path, predict_path):
         parts = name.split('\t')
         seq_name = parts[0]
         label = parts[1]
-        wicker_label = config.DeepTE_class[label]
-        y_labels_dict[seq_name] = wicker_label
+        # wicker_label = config.DeepTE_class[label]
+        # y_labels_dict[seq_name] = wicker_label
+        y_labels_dict[seq_name] = label
 
     ## 4.2 将DeepTE的分类标签转成superfamily级别，如果没到superfamily，则为unknown
     DeepTE_labels = {'ClassII_DNA_Mutator_unknown': 'Mutator', 'ClassII_DNA_TcMar_nMITE': 'Tc1-Mariner',
@@ -357,7 +407,9 @@ def evaluate_DeepTE(test_path, predict_path):
                      'ClassII_DNA_hAT_MITE': 'hAT', 'ClassII_DNA_CACTA_nMITE': 'CACTA', 'ClassI_nLTR_SINE_tRNA': 'tRNA',
                      'ClassII_DNA_TcMar_MITE': 'Tc1-Mariner', 'ClassII_DNA_P_nMITE': 'P', 'ClassI_nLTR_PLE': 'Penelope',
                      'ClassII_DNA_Harbinger_MITE': 'PIF-Harbinger', 'ClassI_nLTR_LINE_L1': 'L1', 'ClassII_nMITE': 'Unknown',
-                     'ClassI_LTR_ERV': 'Retrovirus', 'ClassI_LTR_BEL': 'Bel-Pao', 'ClassI_nLTR_LINE_RTE': 'RTE', 'ClassI_nLTR_LINE_R2': 'R2'}
+                     'ClassI_LTR_ERV': 'Retrovirus', 'ClassI_LTR_BEL': 'Bel-Pao', 'ClassI_nLTR_LINE_RTE': 'RTE', 'ClassI_nLTR_LINE_R2': 'R2',
+                     'ClassII_DNA_Transib_nMITE': 'Transib', 'ClassII_DNA_PiggyBac_nMITE': 'PiggyBac', 'ClassI_nLTR_LINE_Jockey': 'Jockey',
+                     'ClassI_nLTR_SINE_5S': '5S'}
 
     y_predict_seq_names = []
     y_predicts = []
@@ -382,6 +434,222 @@ def evaluate_DeepTE(test_path, predict_path):
     y_test = np.array(y_labels)
     y_pred = np.array(y_predicts)
     get_metrics_by_label(y_test, y_pred)
+
+def transform_repbase_bed(repbase_bed, NeuralTE_bed, label_dict):
+    new_lines = []
+    with open(repbase_bed, 'r') as f_r:
+        for line in f_r:
+            if line.startswith('#'):
+                continue
+            line = line.replace('\n', '')
+            parts = line.split('\t')
+            chr_name = parts[0]
+            chr_start = int(parts[1])
+            chr_end = int(parts[2])
+            info = parts[3]
+            info_parts = info.split(';')
+            te_name = info_parts[9]
+            te_class = info_parts[10]
+            new_label = label_dict[te_name]
+            new_string = ''
+            for i, item in enumerate(info_parts):
+                if i == 10:
+                    new_string += new_label
+                else:
+                    new_string += item
+                if i != len(info_parts)-1:
+                    new_string += ';'
+            new_line = ''
+            for i, item in enumerate(parts):
+                if i == 3:
+                    new_line += new_string
+                else:
+                    new_line += item
+                if i != len(parts)-1:
+                    new_line += '\t'
+                else:
+                    new_line += '\n'
+            new_lines.append(new_line)
+    #print(new_lines)
+    with open(NeuralTE_bed, 'w') as f_save:
+        for line in new_lines:
+            f_save.write(line)
+
+def evalute_genome_coverage(mazie_merge_path, genome_path, temp_dir, threads):
+    if not os.path.exists(temp_dir):
+        os.makedirs(temp_dir)
+    # 1. 将序列用RepeatMasker比对到基因组上。
+    RepeatMasker_command = 'cd ' + temp_dir + ' && RepeatMasker -e ncbi -pa ' + str(threads) \
+                           + ' -q -no_is -norna -nolow -div 40 -gff -lib ' + mazie_merge_path + ' -cutoff 225 ' \
+                           + genome_path
+    print(RepeatMasker_command)
+    os.system(RepeatMasker_command)
+    out_file = genome_path + '.out'
+    # 2. 将.out文件转.bed文件
+    convert2bed_command = 'perl ' + config.project_dir + '/tools/RMout_to_bed.pl ' + out_file + ' base1'
+    print(convert2bed_command)
+    os.system(convert2bed_command)
+
+    bed_file = out_file + '.bed'
+    # 3. 用程序分析比对.bed，分析比例
+    analyze_class_ratio(bed_file, temp_dir)
+
+def analyze_class_ratio(bed_file, work_dir):
+    if not os.path.exists(work_dir):
+        os.makedirs(work_dir)
+
+    # 1.将.out转换成可分析格式，例如.gff
+    # 2、获取每个element对应的染色体以及染色体上的起始、终止位置，位置可能会有overlap，合并有overlap的坐标，此时得到每个element对应的不重叠的位置
+    # te_chrs -> {te_name: {chr_name: []}}
+    te_chrs = {}
+    #class_chrs = -> {class_name: {chr_name: []}}
+    class_chrs = {}
+    # main_class_chrs = -> {class_name: {chr_name: []}}
+    # main_class_chrs = {}
+
+    te_class_dict = {}
+
+    #保存每个te对应的碱基数量
+    te_bases = {}
+    #保存每个 class 对应的碱基数量
+    class_bases = {}
+    # 保存每个 main_class 对应的碱基数量
+    main_class_bases = {}
+    with open(bed_file, 'r') as f_r:
+        for line in f_r:
+            if line.startswith('#'):
+                continue
+            parts = line.split('\t')
+            chr_name = parts[0]
+            chr_start = int(parts[1])
+            chr_end = int(parts[2])
+            info = parts[3]
+            info_parts = info.split(';')
+            te_name = info_parts[9]
+            te_class = info_parts[10]
+            if not te_chrs.__contains__(te_name):
+                te_chrs[te_name] = {}
+            chr_dict = te_chrs[te_name]
+            if not chr_dict.__contains__(chr_name):
+                chr_dict[chr_name] = []
+            chr_pos = chr_dict[chr_name]
+            chr_pos.append((chr_start, chr_end))
+
+            if not class_chrs.__contains__(te_class):
+                class_chrs[te_class] = {}
+            chr_dict = class_chrs[te_class]
+            if not chr_dict.__contains__(chr_name):
+                chr_dict[chr_name] = []
+            chr_pos = chr_dict[chr_name]
+            chr_pos.append((chr_start, chr_end))
+
+            # if te_class.__contains__('LTR'):
+            #     main_class = 'LTR'
+            # elif te_class.__contains__('Helitron'):
+            #     main_class = 'Helitron'
+            # elif te_class.__contains__('DNA'):
+            #     main_class = 'DNA'
+            # elif te_class.__contains__('MITE'):
+            #     main_class = 'MITE'
+            #
+            # if not main_class_chrs.__contains__(main_class):
+            #     main_class_chrs[main_class] = {}
+            # chr_dict = main_class_chrs[main_class]
+            # if not chr_dict.__contains__(chr_name):
+            #     chr_dict[chr_name] = []
+            # chr_pos = chr_dict[chr_name]
+            # chr_pos.append((chr_start, chr_end))
+
+            te_class_dict[te_name] = te_class
+
+    for te_name in te_chrs.keys():
+        chr_dict = te_chrs[te_name]
+        total_bases = 0
+        for chr_name in chr_dict.keys():
+            chr_pos = chr_dict[chr_name]
+            merged_intervals = merge_overlapping_intervals(chr_pos)
+            for segment in merged_intervals:
+                total_bases += abs(segment[1] - segment[0])
+        te_bases[te_name] = total_bases
+    #print(te_bases)
+
+    # #统计占比最高的前10个DNA转座子
+    # te_base_list = list(te_bases.items())
+    # te_base_list.sort(key=lambda x: -x[1])
+    # top_dna = []
+    # for item in te_base_list:
+    #     te_name = item[0]
+    #     class_name = te_class_dict[te_name]
+    #     if not class_name.__contains__('Helitron') and (class_name.__contains__('DNA') or class_name.__contains__('MITE')):
+    #         top_dna.append((te_name, class_name, item[1]))
+
+    for class_name in class_chrs.keys():
+        chr_dict = class_chrs[class_name]
+        total_bases = 0
+        for chr_name in chr_dict.keys():
+            chr_pos = chr_dict[chr_name]
+            merged_intervals = merge_overlapping_intervals(chr_pos)
+            for segment in merged_intervals:
+                total_bases += abs(segment[1] - segment[0])
+        class_bases[class_name] = total_bases
+    #print(class_bases)
+
+    # for class_name in main_class_chrs.keys():
+    #     chr_dict = main_class_chrs[class_name]
+    #     total_bases = 0
+    #     for chr_name in chr_dict.keys():
+    #         chr_pos = chr_dict[chr_name]
+    #         merged_intervals = merge_overlapping_intervals(chr_pos)
+    #         for segment in merged_intervals:
+    #             total_bases += abs(segment[1] - segment[0])
+    #     main_class_bases[class_name] = total_bases
+
+    # store for testing
+    te_base_file = work_dir + '/te_base.json'
+    with codecs.open(te_base_file, 'w', encoding='utf-8') as f:
+        json.dump(te_bases, f)
+    class_base_file = work_dir + '/class_base.json'
+    with codecs.open(class_base_file, 'w', encoding='utf-8') as f:
+        json.dump(class_bases, f)
+    # main_class_base_file = work_dir + '/main_class_base.json'
+    # with codecs.open(main_class_base_file, 'w', encoding='utf-8') as f:
+    #     json.dump(main_class_bases, f)
+    # top_dna_file = work_dir + '/top_dna.json'
+    # with codecs.open(top_dna_file, 'w', encoding='utf-8') as f:
+    #     json.dump(top_dna, f)
+
+def merge_overlapping_intervals(intervals):
+    # 按照起始位置对基因组位置数组进行排序
+    sorted_intervals = sorted(intervals, key=lambda x: x[0])
+
+    merged_intervals = []
+    current_interval = sorted_intervals[0]
+
+    # 遍历排序后的基因组位置数组
+    for interval in sorted_intervals[1:]:
+        # 如果当前基因组位置与下一个基因组位置有重叠
+        if current_interval[1] >= interval[0]:
+            # 更新当前基因组位置的结束位置
+            current_interval = (current_interval[0], max(current_interval[1], interval[1]))
+        else:
+            # 如果没有重叠，则将当前基因组位置添加到结果数组中，并更新当前基因组位置为下一个基因组位置
+            merged_intervals.append(current_interval)
+            current_interval = interval
+
+    # 将最后一个基因组位置添加到结果数组中
+    merged_intervals.append(current_interval)
+
+    return merged_intervals
+
+def get_train_except_species(total_repbase, species_name, train_path):
+    names, contigs = read_fasta_v1(total_repbase)
+    train_contigs = {}
+    for name in names:
+        parts = name.split('\t')
+        cur_species_name = parts[2]
+        if cur_species_name != species_name:
+            train_contigs[name] = contigs[name]
+    store_fasta(train_contigs, train_path)
 
 # 画一个3D图，用于展示参数变化后的f1值
 def plot_3D_param(x, y, z):

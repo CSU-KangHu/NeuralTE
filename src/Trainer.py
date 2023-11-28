@@ -16,6 +16,7 @@ from CNN_Model import CNN_Model
 from DataProcessor import DataProcessor
 from utils.evaluate_util import get_metrics
 from utils.show_util import showToolName, showTrainParams
+from utils.data_util import get_feature_len
 import datetime
 
 
@@ -47,12 +48,13 @@ def main():
     # 1.parse args
     describe_info = '########################## NeuralTE, version ' + str(config.version_num) + ' ##########################'
     parser = argparse.ArgumentParser(description=describe_info)
-    parser.add_argument('--data', metavar='data', help='Input data used to train model, fasta format')
+    parser.add_argument('--data', metavar='data', help='Input fasta file used to train model, header format: seq_name\tlabel\tspecies_name, refer to "data/train.example.fa" for example.')
+    parser.add_argument('--outdir', metavar='output_dir', help='Output directory, store temporary files')
     parser.add_argument('--use_terminal', metavar='use_terminal', help='Whether to use LTR, TIR terminal features, 1: true, 0: false. default = [ ' + str(config.use_terminal) + ' ]')
     parser.add_argument('--use_TSD', metavar='use_TSD', help='Whether to use TSD features, 1: true, 0: false. default = [ ' + str(config.use_TSD) + ' ]')
     parser.add_argument('--use_domain', metavar='use_domain', help='Whether to use domain features, 1: true, 0: false. default = [ ' + str(config.use_domain) + ' ]')
     parser.add_argument('--use_ends', metavar='use_ends', help='Whether to use 5-bp terminal ends features, 1: true, 0: false. default = [ ' + str(config.use_ends) + ' ]')
-    parser.add_argument('--thread', metavar='thread_num', help='Input thread num, default = [ ' + str(config.threads) + ' ]')
+    parser.add_argument('--threads', metavar='thread_num', help='Input thread num, default = [ ' + str(config.threads) + ' ]')
     parser.add_argument('--internal_kmer_sizes', metavar='internal_kmer_sizes', help='The k-mer size used to convert internal sequences to k-mer frequency features, default = [ ' + str(config.internal_kmer_sizes) + ' MB ]')
     parser.add_argument('--terminal_kmer_sizes', metavar='terminal_kmer_sizes', help='The k-mer size used to convert terminal sequences to k-mer frequency features, default = [ ' + str(config.terminal_kmer_sizes) + ' ]')
     parser.add_argument('--cnn_num_convs', metavar='cnn_num_convs', help='The number of CNN convolutional layers. default = [ ' + str(config.cnn_num_convs) + ' ]')
@@ -67,11 +69,12 @@ def main():
     args = parser.parse_args()
 
     data_path = args.data
+    outdir = args.outdir
     use_terminal = args.use_terminal
     use_TSD = args.use_TSD
     use_domain = args.use_domain
     use_ends = args.use_ends
-    threads = args.thread
+    threads = args.threads
     internal_kmer_sizes = args.internal_kmer_sizes
     terminal_kmer_sizes = args.terminal_kmer_sizes
     cnn_num_convs = args.cnn_num_convs
@@ -82,7 +85,8 @@ def main():
     epochs = args.epochs
     use_checkpoint = args.use_checkpoint
 
-
+    if outdir is not None:
+        config.work_dir = outdir
     if use_terminal is not None:
         config.use_terminal = int(use_terminal)
     if use_TSD is not None:
@@ -113,6 +117,9 @@ def main():
         config.use_checkpoint = int(use_checkpoint)
 
     showTrainParams(data_path)
+
+    X_feature_len = get_feature_len()
+    config.X_feature_len = X_feature_len
 
     # 实例化 DataProcessor 类
     data_processor = DataProcessor()
