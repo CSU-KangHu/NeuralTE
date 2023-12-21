@@ -1,5 +1,5 @@
 # 1. 配置使用多GPU
-start_gpu_num = 1 # 开始GPU编号
+start_gpu_num = 3 # 开始GPU编号
 use_gpu_num = 1 # 使用GPU数量，start_gpu_num=0，use_gpu_num=2表示使用GPU0，GPU1，共两个GPU
 all_devices = ["/gpu:0", "/gpu:1", "/gpu:2", "/gpu:3", "/gpu:4", "/gpu:5", "/gpu:6", "/gpu:7"] # 机器上所有GPU编号，如果你的机器GPU数量超过8个，依次再后面添加 "/gpu:8", "/gpu:9" ...
 

@@ -1,22 +1,26 @@
+import argparse
 import os
 import sys
+
 current_folder = os.path.dirname(os.path.abspath(__file__))
 # 添加 configs 文件夹的路径到 Python 路径
 configs_folder = os.path.join(current_folder, "..")  # 需要根据实际目录结构调整
 sys.path.append(configs_folder)
 
 import numpy as np
-from sklearn.model_selection import KFold
+from sklearn.model_selection import StratifiedShuffleSplit
 from keras.utils import np_utils
 from configs import config
 from CNN_Model import CNN_Model
 from DataProcessor import DataProcessor
 from utils.evaluate_util import get_metrics
+from utils.show_util import showToolName
+from utils.data_util import get_feature_len
 
 class CrossValidator:
     def __init__(self, num_folds=5):
         self.num_folds = num_folds
-        self.kf = KFold(n_splits=num_folds, shuffle=True, random_state=42)
+        self.sss = StratifiedShuffleSplit(n_splits=num_folds, test_size=0.2, random_state=42)
 
     def evaluate(self, X, y):
         accuracy_array = []
@@ -24,7 +28,7 @@ class CrossValidator:
         recall_array = []
         f1_array = []
         # 循环每个K折
-        for fold, (train_index, test_index) in enumerate(self.kf.split(X)):
+        for fold, (train_index, test_index) in enumerate(self.sss.split(X, y)):
             X_train, X_test = X[train_index], X[test_index]
             y_train, y_test = y[train_index], y[test_index]
             y_train_one_hot = np_utils.to_categorical(y_train, int(config.class_num))
@@ -43,7 +47,7 @@ class CrossValidator:
 
             # 预测概率
             y_pred = model.predict(X_test)
-            accuracy, precision, recall, f1 = get_metrics(y_pred, y_test, None)
+            accuracy, precision, recall, f1 = get_metrics(y_pred, y_test, None, None)
             print("Fold:", fold)
             print("Accuracy:", accuracy)
             print("Precision:", precision)
@@ -53,35 +57,80 @@ class CrossValidator:
             precision_array.append(precision)
             recall_array.append(recall)
             f1_array.append(f1)
-            accuracies = np.array(accuracy_array)
-            precisions = np.array(precision_array)
-            recalls = np.array(recall_array)
-            f1s = np.array(f1_array)
-            # 计算平均值和样本标准差
-            accuracy_mean = round(np.mean(accuracies), 4)
-            accuracy_stdv = round(np.std(accuracies, ddof=1), 4)  # 使用 ddof=1 表示计算样本标准差
-            precision_mean = round(np.mean(precisions), 4)
-            precision_stdv = round(np.std(precisions, ddof=1), 4)  # 使用 ddof=1 表示计算样本标准差
-            recall_mean = round(np.mean(recalls), 4)
-            recall_stdv = round(np.std(recalls, ddof=1), 4)  # 使用 ddof=1 表示计算样本标准差
-            f1_mean = round(np.mean(f1s), 4)
-            f1_stdv = round(np.std(f1s, ddof=1), 4)  # 使用 ddof=1 表示计算样本标准差
+        accuracies = np.array(accuracy_array)
+        precisions = np.array(precision_array)
+        recalls = np.array(recall_array)
+        f1s = np.array(f1_array)
+        # 计算平均值和样本标准差
+        accuracy_mean = round(np.mean(accuracies), 4)
+        accuracy_stdv = round(np.std(accuracies, ddof=1), 4)  # 使用 ddof=1 表示计算样本标准差
+        precision_mean = round(np.mean(precisions), 4)
+        precision_stdv = round(np.std(precisions, ddof=1), 4)  # 使用 ddof=1 表示计算样本标准差
+        recall_mean = round(np.mean(recalls), 4)
+        recall_stdv = round(np.std(recalls, ddof=1), 4)  # 使用 ddof=1 表示计算样本标准差
+        f1_mean = round(np.mean(f1s), 4)
+        f1_stdv = round(np.std(f1s, ddof=1), 4)  # 使用 ddof=1 表示计算样本标准差
         return [accuracy_mean, precision_mean, recall_mean, f1_mean], [accuracy_stdv, precision_stdv, recall_stdv, f1_stdv]
 
 
 def main():
+    showToolName()
+
+    # 1.parse args
+    describe_info = '########################## NeuralTE-CrossValidator, version ' + str(config.version_num) + ' ##########################'
+    parser = argparse.ArgumentParser(description=describe_info)
+    parser.add_argument('--data', metavar='data', help='Input fasta file containing TSDs information used to CrossValidator model')
+    parser.add_argument('--outdir', metavar='output_dir', help='Output directory, store temporary files')
+    parser.add_argument('--use_kmers', metavar='use_kmers', help='Whether to use kmers features, 1: true, 0: false. default = [ ' + str(config.use_kmers) + ' ]')
+    parser.add_argument('--use_terminal', metavar='use_terminal', help='Whether to use LTR, TIR terminal features, 1: true, 0: false. default = [ ' + str(config.use_terminal) + ' ]')
+    parser.add_argument('--use_TSD', metavar='use_TSD', help='Whether to use TSD features, 1: true, 0: false. default = [ ' + str(config.use_TSD) + ' ]')
+    parser.add_argument('--use_domain', metavar='use_domain', help='Whether to use domain features, 1: true, 0: false. default = [ ' + str(config.use_domain) + ' ]')
+    parser.add_argument('--use_ends', metavar='use_ends', help='Whether to use 5-bp terminal ends features, 1: true, 0: false. default = [ ' + str(config.use_ends) + ' ]')
+    parser.add_argument('--is_predict', metavar='is_predict', help='Enable prediction mode, 1: true, 0: false. default = [ ' + str(config.is_predict) + ' ]')
+    parser.add_argument('--threads', metavar='thread_num', help='Input thread num, default = [ ' + str(config.threads) + ' ]')
+
+    args = parser.parse_args()
+
+    data_path = args.data
+    outdir = args.outdir
+    use_kmers = args.use_kmers
+    use_terminal = args.use_terminal
+    use_TSD = args.use_TSD
+    use_domain = args.use_domain
+    use_ends = args.use_ends
+    is_predict = args.is_predict
+    threads = args.threads
+
+    if outdir is not None:
+        config.work_dir = outdir
+    if use_terminal is not None:
+        config.use_terminal = int(use_terminal)
+    if use_kmers is not None:
+        config.use_kmers = int(use_kmers)
+    if use_TSD is not None:
+        config.use_TSD = int(use_TSD)
+    if use_domain is not None:
+        config.use_domain = int(use_domain)
+    if use_ends is not None:
+        config.use_ends = int(use_ends)
+    if is_predict is not None:
+        config.is_predict = int(is_predict)
+    if threads is not None:
+        config.threads = int(threads)
+
+    X_feature_len = get_feature_len()
+    config.X_feature_len = X_feature_len
+
     # 实例化 DataProcessor 类
     data_processor = DataProcessor()
     # 加载数据
     # 请确保下面数据的header格式为Repbase格式，即'TE_name  Superfamily Species'，以'\t'分割
-    cv_train_data_path = config.work_dir + "/repbase_total.ref"  # 交叉验证训练数据路径
-    X, y, seq_names = data_processor.load_data(config.internal_kmer_sizes, config.terminal_kmer_sizes, cv_train_data_path)
-    X = X.reshape(X.shape[0], config.X_feature_len)
+    cv_train_data_path = data_path  # 交叉验证训练数据路径
+    X, y, seq_names, data_path = data_processor.load_data(config.internal_kmer_sizes, config.terminal_kmer_sizes, cv_train_data_path)
     print(X.shape, y.shape)
 
     # 实例化 CrossValidator 类
     validator = CrossValidator(num_folds=5)
-
     # 进行交叉验证
     means, stdvs = validator.evaluate(X, y)
     print('accuracy, precision, recall, f1:')

@@ -1,14 +1,24 @@
+#-- coding: UTF-8 --
 # config.py：本文件存储NeuralTE中定义的变量和参数，修改之前确保你理解它的作用，否则建议保持默认值
 
 import os
 from multiprocessing import cpu_count
+current_folder = os.path.dirname(os.path.abspath(__file__))
+project_dir = os.path.join(current_folder, "..")
+
 # 1.数据预处理参数
 ## 是否使用相应的特征进行分类，所有的特征已被证明对分类有帮助。
-use_kmers = 1   # 使用k-mer特征cp
+use_kmers = 1   # 使用k-mer特征
 use_terminal = 1    # 使用LTR、TIR终端特征
-use_TSD = 1     # 使用TSD特征
+use_TSD = 0     # 使用TSD特征
 use_domain = 1  # 使用TE domain特征
 use_ends = 1    # 使用TE 5'端和3'端各5bp特征
+
+use_minority = 1 # 使用少数样本进行纠错
+is_train = 0  # 当前是否为模型训练阶段.
+is_predict = 1  # Enable prediction mode. Setting to 0 requires the input FASTA file to be in Repbase format (seq_name\tLabel\tspecies).
+is_wicker = 1   # Use Wicker classification labels. Setting to 0 will output RepeatMasker classification labels."
+is_plant = 0 # Is the input genome of a plant? 0 represents non-plant, while 1 represents plant.
 
 # 2.程序和模型参数
 threads = int(cpu_count())  # 使用多线程加载数据
@@ -27,8 +37,11 @@ use_checkpoint = 0  # 是否使用断点训练，使用设置为1；当使用断
 
 ###################################################分界线，下面无需修改参数######################################################################
 version_num = '1.0.0'
-project_dir = os.getcwd()   # 项目路径
-work_dir = os.getcwd() + "/data" # 数据预处理时临时工作目录
+work_dir = project_dir + '/work' # 数据预处理时临时工作目录
+
+# 小样本标签
+#minority_labels_class = {'Crypton': 0, '5S': 1, '7SL': 2, 'Merlin': 3, 'P': 4, 'R2': 5, 'Unknown': 6}
+minority_labels_class = {'Crypton': 0, '5S': 1, 'Merlin': 2, 'P': 3, 'R2': 4, 'Unknown': 5}
 
 ## 根据wicker分类的superfamily标签
 all_wicker_class = {'Tc1-Mariner': 0, 'hAT': 1, 'Mutator': 2, 'Merlin': 3, 'Transib': 4, 'P': 5, 'PiggyBac': 6,
@@ -52,10 +65,28 @@ if use_kmers != 0:
                 X_feature_len += pow(4, kmer_size)
 if use_TSD != 0:
     X_feature_len += max_tsd_length * 4 + 1
+# if use_minority != 0:
+#     X_feature_len += len(minority_labels_class)
 if use_domain != 0:
-    X_feature_len += 29
+    X_feature_len += len(all_wicker_class)
 if use_ends != 0:
     X_feature_len += 10 * 4
+
+## Repbase label对应到wicker label
+Repbase_wicker_labels = {'Mariner/Tc1': 'Tc1-Mariner', 'mariner/Tc1 superfamily': 'Tc1-Mariner', 'hAT': 'hAT',
+                         'HAT superfamily': 'hAT', 'MuDR': 'Mutator', 'Merlin': 'Merlin', 'Transib': 'Transib',
+                         'P': 'P', 'P-element': 'P', 'PiggyBac': 'PiggyBac', 'Harbinger': 'PIF-Harbinger',
+                         'EnSpm/CACTA': 'CACTA', 'Crypton': 'Crypton', 'CryptonF': 'Crypton', 'CryptonS': 'Crypton',
+                         'CryptonI': 'Crypton', 'CryptonV': 'Crypton', 'CryptonA': 'Crypton', 'Helitron': 'Helitron',
+                         'HELITRON superfamily': 'Helitron', 'Copia': 'Copia', 'Gypsy': 'Gypsy',
+                         'GYPSY superfamily': 'Gypsy', 'Gypsy retrotransposon': 'Gypsy', 'BEL': 'Bel-Pao',
+                         'Caulimoviridae': 'Retrovirus',
+                         'ERV1': 'Retrovirus', 'ERV2': 'Retrovirus', 'ERV3': 'Retrovirus', 'Lentivirus': 'Retrovirus',
+                         'ERV4': 'Retrovirus', 'Lokiretrovirus': 'Retrovirus', 'DIRS': 'DIRS', 'Penelope': 'Penelope',
+                         'Penelope/Poseidon': 'Penelope', 'Neptune': 'Penelope', 'Nematis': 'Penelope',
+                         'Athena': 'Penelope', 'Coprina': 'Penelope', 'Hydra': 'Penelope', 'Naiad/Chlamys': 'Penelope',
+                         'R2': 'R2', 'RTE': 'RTE', 'Jockey': 'Jockey', 'L1': 'L1', 'I': 'I', 'SINE2/tRNA': 'tRNA',
+                         'SINE1/7SL': '7SL', 'SINE3/5S': '5S', 'Unknown': 'Unknown'}
 
 ## 对每种Repbase数据进行扩增
 expandClassNum = {'Merlin': 20, 'Transib': 10, 'P': 10, 'Crypton': 10, 'Penelope': 5, 'R2': 20, 'RTE': 8, 'Jockey': 10, 'I': 10}

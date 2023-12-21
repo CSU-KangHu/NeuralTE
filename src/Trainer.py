@@ -1,7 +1,9 @@
+#-- coding: UTF-8 --
 import argparse
 import json
 import os
 import sys
+import time
 
 current_folder = os.path.dirname(os.path.abspath(__file__))
 # 添加 configs 文件夹的路径到 Python 路径
@@ -50,10 +52,15 @@ def main():
     parser = argparse.ArgumentParser(description=describe_info)
     parser.add_argument('--data', metavar='data', help='Input fasta file used to train model, header format: seq_name\tlabel\tspecies_name, refer to "data/train.example.fa" for example.')
     parser.add_argument('--outdir', metavar='output_dir', help='Output directory, store temporary files')
+    parser.add_argument('--genome', metavar='genome', help='Genome path, use to search for TSDs')
+    parser.add_argument('--use_kmers', metavar='use_kmers', help='Whether to use kmers features, 1: true, 0: false. default = [ ' + str(config.use_kmers) + ' ]')
     parser.add_argument('--use_terminal', metavar='use_terminal', help='Whether to use LTR, TIR terminal features, 1: true, 0: false. default = [ ' + str(config.use_terminal) + ' ]')
     parser.add_argument('--use_TSD', metavar='use_TSD', help='Whether to use TSD features, 1: true, 0: false. default = [ ' + str(config.use_TSD) + ' ]')
+    parser.add_argument('--use_minority', metavar='use_minority', help='Whether to use minority features, 1: true, 0: false. default = [ ' + str(config.use_minority) + ' ]')
     parser.add_argument('--use_domain', metavar='use_domain', help='Whether to use domain features, 1: true, 0: false. default = [ ' + str(config.use_domain) + ' ]')
     parser.add_argument('--use_ends', metavar='use_ends', help='Whether to use 5-bp terminal ends features, 1: true, 0: false. default = [ ' + str(config.use_ends) + ' ]')
+    parser.add_argument('--is_train', metavar='is_train', help='Enable train mode, 1: true, 0: false. default = [ ' + str(config.is_train) + ' ]')
+    parser.add_argument('--is_predict', metavar='is_predict', help='Enable prediction mode, 1: true, 0: false. default = [ ' + str(config.is_predict) + ' ]')
     parser.add_argument('--threads', metavar='thread_num', help='Input thread num, default = [ ' + str(config.threads) + ' ]')
     parser.add_argument('--internal_kmer_sizes', metavar='internal_kmer_sizes', help='The k-mer size used to convert internal sequences to k-mer frequency features, default = [ ' + str(config.internal_kmer_sizes) + ' MB ]')
     parser.add_argument('--terminal_kmer_sizes', metavar='terminal_kmer_sizes', help='The k-mer size used to convert terminal sequences to k-mer frequency features, default = [ ' + str(config.terminal_kmer_sizes) + ' ]')
@@ -70,10 +77,15 @@ def main():
 
     data_path = args.data
     outdir = args.outdir
+    genome = args.genome
+    use_kmers = args.use_kmers
     use_terminal = args.use_terminal
     use_TSD = args.use_TSD
+    use_minority = args.use_minority
     use_domain = args.use_domain
     use_ends = args.use_ends
+    is_train = args.is_train
+    is_predict = args.is_predict
     threads = args.threads
     internal_kmer_sizes = args.internal_kmer_sizes
     terminal_kmer_sizes = args.terminal_kmer_sizes
@@ -87,14 +99,22 @@ def main():
 
     if outdir is not None:
         config.work_dir = outdir
+    if use_kmers is not None:
+        config.use_kmers = int(use_kmers)
     if use_terminal is not None:
         config.use_terminal = int(use_terminal)
     if use_TSD is not None:
         config.use_TSD = int(use_TSD)
+    if use_minority is not None:
+        config.use_minority = int(use_minority)
     if use_domain is not None:
         config.use_domain = int(use_domain)
     if use_ends is not None:
         config.use_ends = int(use_ends)
+    if is_train is not None:
+        config.is_train = int(is_train)
+    if is_predict is not None:
+        config.is_predict = int(is_predict)
     if threads is not None:
         config.threads = int(threads)
     if internal_kmer_sizes is not None:
@@ -116,23 +136,43 @@ def main():
     if use_checkpoint is not None:
         config.use_checkpoint = int(use_checkpoint)
 
+    if genome is not None:
+        os.makedirs(config.work_dir, exist_ok=True)
+        genome_info_path = config.work_dir + '/genome.info'
+        if str(genome).__contains__('genome.info'):
+            os.system('cp ' + genome + ' ' + genome_info_path)
+        else:
+            with open(genome_info_path, 'w') as f_save:
+                f_save.write('#Scientific Name\tGenome Path\tIs Plant\n')
+                f_save.write('Unknown\t'+genome+'\t'+str(config.is_plant)+'\n')
+
     showTrainParams(data_path)
 
     X_feature_len = get_feature_len()
     config.X_feature_len = X_feature_len
 
+    starttime1 = time.time()
     # 实例化 DataProcessor 类
     data_processor = DataProcessor()
     # 加载数据
-    X, y, seq_names = data_processor.load_data(config.internal_kmer_sizes, config.terminal_kmer_sizes, data_path)
+    X, y, seq_names, data_path = data_processor.load_data(config.internal_kmer_sizes, config.terminal_kmer_sizes, data_path)
     print(X.shape, y.shape)
+    endtime1 = time.time()
+    dtime1 = endtime1 - starttime1
+    print("Running time of DataProcessor: %.8s s" % (dtime1))
 
+    starttime2 = time.time()
     # 实例化 Trainer 类
     trainer = Trainer()
-
     # 进行训练
     model_path = trainer.train(X, y, config.cnn_num_convs, config.cnn_filters_array)
     print('Trained model is stored in:', model_path)
+    endtime2 = time.time()
+    dtime2 = endtime2 - starttime2
+    print("Running time of model Trainer: %.8s s" % (dtime2))
+
+    dtime = endtime2 - starttime1
+    print("Running time of total NeuralTE-Trainer: %.8s s" % (dtime))
 
 if __name__ == '__main__':
     main()

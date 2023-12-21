@@ -13,7 +13,7 @@ from matplotlib import cm
 
 from configs import config
 from utils.data_util import read_fasta_v1, word_seq, generate_kmer_dic, generate_mat, store_fasta, replace_non_atcg, \
-    get_species_TE
+    get_species_TE, read_fasta, split2TrainTest, transfer_RMOut2BlastnOut
 
 import tensorflow as tf
 
@@ -79,7 +79,7 @@ def plot_confusion_matrix(y_pred, y_test):
     plt.savefig(config.work_dir + '/confusion_matrix.png', format='png')
     #plt.show()
 
-def get_metrics(y_pred, y_test, seq_names):
+def get_metrics(y_pred, y_test, seq_names, data_path):
     predicted_classes = np.argmax(np.round(y_pred), axis=1)
     # transfer the prop less than a threshold to be unknown for a class
     prop_thr = 0
@@ -102,40 +102,210 @@ def get_metrics(y_pred, y_test, seq_names):
         predicted_classes_list.append(new_class)
 
     if seq_names is not None:
-        store_results_dic = {}
+        seqName2PredictLabel = {}
         for i in range(0, len(predicted_classes_list)):
             predicted_class = predicted_classes_list[i]
-            seq_name = seq_names[i]
+            seq_name = seq_names[i][0]
+            true_label = seq_names[i][1]
             if predicted_class != 28:
-                store_results_dic[seq_name] = str(seq_name) + ',' + config.inverted_all_wicker_class[predicted_class]
+                seqName2PredictLabel[seq_name] = (true_label, config.inverted_all_wicker_class[predicted_class])
             else:
-                store_results_dic[seq_name] = str(seq_name) + ',' + 'Unknown'
+                seqName2PredictLabel[seq_name] = (true_label, 'Unknown')
 
-        with open(config.work_dir + '/results.txt', 'w+') as opt:
-            for eachid in store_results_dic:
-                opt.write(store_results_dic[eachid] + '\n')
+        # 读取intactLTR 与 片段LTR的名称对应关系，将intactLTR替换成 片段LTR
+        SegLTR2intactLTRMap = config.work_dir + '/segLTR2intactLTR.map'
+        SegLTR2intactLTR = {}
+        try:
+            with open(SegLTR2intactLTRMap, 'r') as f_r:
+                for line in f_r:
+                    line = line.replace('\n', '')
+                    parts = line.split('\t')
+                    segLTR_name = parts[0]
+                    intactLTR_name = parts[1]
+                    SegLTR2intactLTR[segLTR_name] = intactLTR_name
+        except FileNotFoundError:
+            #print(SegLTR2intactLTRMap + " not found or cannot be opened.")
+            print('')
 
-    # 计算准确率
-    accuracy = accuracy_score(y_test, predicted_classes_list)
-    # 计算精确率
-    precision = precision_score(y_test, predicted_classes_list, average='macro')
-    # 计算召回率
-    recall = recall_score(y_test, predicted_classes_list, average='macro')
-    # 计算F1值
-    f1 = f1_score(y_test, predicted_classes_list, average='macro')
+        wicker2RM = {}
+        # 转换成RepeatMasker标签
+        with open(config.project_dir + '/data/Wicker2RM.info', 'r') as f_r:
+            for line in f_r:
+                if line.startswith('#'):
+                    continue
+                line = line.replace('\n', '')
+                parts = line.split('\t')
+                Wicker_Label = parts[0]
+                RepeatMasker_Label = parts[1]
+                wicker2RM[Wicker_Label] = RepeatMasker_Label
 
-    # 将数值标签转为字符标签
-    inverted_all_wicker_class = config.inverted_all_wicker_class
-    predicted_labels = []
-    test_labels = []
-    for label_num in predicted_classes_list:
-        predicted_labels.append(inverted_all_wicker_class[label_num])
-    for y_num in y_test:
-        test_labels.append(inverted_all_wicker_class[y_num])
-    # plot confusion matrix
-    plot_confusion_matrix(predicted_labels, test_labels)
 
-    return round(accuracy, 4), round(precision, 4), round(recall, 4), round(f1, 4)
+        # 原始NeuralTE的预测结果
+        orig_names, orig_contigs = read_fasta(data_path)
+        classified_data = config.work_dir + '/classified_TE.fa'
+        classified_contigs = {}
+        for name in orig_names:
+            orig_seq = orig_contigs[name]
+            name = name.split('/')[0].split('#')[0]
+            map_name = name
+            if SegLTR2intactLTR.__contains__(name):
+                map_name = SegLTR2intactLTR[name]
+            predict_label = seqName2PredictLabel[map_name][1]
+            if not config.is_wicker:
+                predict_label = wicker2RM[predict_label]
+            new_name = name + '#' + predict_label
+            classified_contigs[new_name] = orig_seq
+        store_fasta(classified_contigs, classified_data)
+
+        with open(config.work_dir + '/classified.info', 'w+') as opt:
+            opt.write('#Seq_Name, True_Label, Predict_Label' + '\n')
+            for name in orig_names:
+                name = name.split('/')[0].split('#')[0]
+                map_name = name
+                if SegLTR2intactLTR.__contains__(name):
+                    map_name = SegLTR2intactLTR[name]
+                predict_label = seqName2PredictLabel[map_name][1]
+                true_label = seqName2PredictLabel[map_name][0]
+                if not config.is_wicker:
+                    predict_label = wicker2RM[predict_label]
+                opt.write(name + ',' + true_label + ',' + predict_label + '\n')
+    accuracy = 0
+    precision = 0
+    recall = 0
+    f1 = 0
+    if not config.is_predict:
+        # 计算准确率
+        accuracy = round(accuracy_score(y_test, predicted_classes_list), 4)
+        # 计算精确率
+        precision = round(precision_score(y_test, predicted_classes_list, average='macro'), 4)
+        # 计算召回率
+        recall = round(recall_score(y_test, predicted_classes_list, average='macro'), 4)
+        # 计算F1值
+        f1 = round(f1_score(y_test, predicted_classes_list, average='macro'), 4)
+
+        # 将数值标签转为字符标签
+        inverted_all_wicker_class = config.inverted_all_wicker_class
+        predicted_labels = []
+        test_labels = []
+        for label_num in predicted_classes_list:
+            predicted_labels.append(inverted_all_wicker_class[label_num])
+        for y_num in y_test:
+            test_labels.append(inverted_all_wicker_class[y_num])
+        # plot confusion matrix
+        plot_confusion_matrix(predicted_labels, test_labels)
+        print('accuracy, precision, recall, f1:', accuracy, precision, recall, f1)
+
+    return accuracy, precision, recall, f1
+
+
+def correct_using_minority(data_path, threads):
+    # 对NeuralTE的预测结果进行小样本纠错
+    # 1. 用RepeatMasker将测试数据集与小样本进行比对
+    target_path = config.work_dir + '/minority/train.minority.ref'
+    RMOut = data_path + '.out'
+    RepeatMasker_command = 'RepeatMasker -lib ' + target_path + ' -no_is -norna -nolow -pa ' + str(threads) + ' ' + data_path + ' > /dev/null 2>&1'
+    print(RepeatMasker_command)
+    os.system(RepeatMasker_command)
+    # 2. 将RepeatMasker的输出转为blastn out，方便解析
+    test_minority_out = config.work_dir + '/minority/test.minority.out'
+    tools_dir = config.project_dir + '/tools'
+    transfer_RMOut2BlastnOut(RMOut, test_minority_out, tools_dir)
+    # 3. 获取比对结果，得到比对序列占query比例，对于 > 80%的query序列，然后将query的label设置为target label
+    query_names, query_contigs = read_fasta(data_path)
+    target_names, target_contigs = read_fasta_v1(target_path)
+    target_labels = {}
+    target_len_dict = {}
+    for name in target_names:
+        parts = name.split('\t')
+        target_name = parts[0]
+        label = parts[1]
+        target_labels[target_name] = label
+        target_len_dict[target_name] = len(target_contigs[name])
+
+    query_intervals = {}
+    query_records = {}
+    with open(test_minority_out, 'r') as f_r:
+        for line in f_r:
+            parts = line.split('\t')
+            query_name = parts[0]
+            subject_name = parts[1]
+            identity = float(parts[2])
+            query_start = int(parts[6])
+            query_end = int(parts[7])
+            subject_start = int(parts[8])
+            subject_end = int(parts[9])
+            e_value = float(parts[10])
+            if subject_start > subject_end:
+                temp = subject_start
+                subject_start = subject_end
+                subject_end = temp
+            if e_value > 1e-10:
+                continue
+            if not query_intervals.__contains__(query_name):
+                query_intervals[query_name] = {}
+            target_intervals = query_intervals[query_name]
+            if not target_intervals.__contains__(subject_name):
+                target_intervals[subject_name] = []
+            intervals = target_intervals[subject_name]
+            intervals.append((query_start, query_end))
+
+            if not query_records.__contains__(query_name):
+                query_records[query_name] = {}
+            target_records = query_records[query_name]
+            if not target_records.__contains__(subject_name):
+                target_records[subject_name] = []
+            records = target_records[subject_name]
+            records.append((query_start, query_end, subject_start, subject_end))
+
+    query_labels = {}
+    for query_name in query_intervals.keys():
+        target_intervals = query_intervals[query_name]
+        target_records = query_records[query_name]
+        for subject_name in target_intervals.keys():
+            records = target_records[subject_name]
+            target_label = target_labels[subject_name]
+            intervals = target_intervals[subject_name]
+            merge_intervals = merge_overlapping_intervals(intervals)
+            # 求总共占比长度
+            sum_len = 0
+            for interval in merge_intervals:
+                sum_len += abs(interval[1] - interval[0])
+            query_len = len(query_contigs[query_name])
+            subject_len = target_len_dict[subject_name]
+            alignment_ratio = float(sum_len) / query_len
+            if alignment_ratio > 0.8:
+                if not query_labels.__contains__(query_name):
+                    query_labels[query_name] = target_label
+            elif target_label == 'P' or target_label == 'Merlin':
+                # 如果target是DNA转座子，且query的终端能比对到target的终端，也算
+                # query的比对是5'-end或者3'-end，同时subject的比对也是5'-end或者3'-end
+                for record in records:
+                    if ((record[0] - 1) <= 5 or (query_len - record[1]) <= 5) and (
+                            (record[2] - 1) <= 5 or (subject_len - record[3]) <= 5):
+                        query_labels[query_name] = target_label
+                        break
+
+    raw_NeuralTE_result = config.work_dir + '/classified.info'
+    # 纠正
+    y_pred = []
+    y_test = []
+    with open(raw_NeuralTE_result, 'r') as f_r:
+        for line in f_r:
+            if line.startswith('#'):
+                continue
+            line = line.replace('\n', '')
+            parts = line.split(',')
+            seq_name = parts[0]
+            true_label = parts[1]
+            pred_label = parts[2]
+            if query_labels.__contains__(seq_name):
+                pred_label = query_labels[seq_name]
+            y_pred.append(pred_label)
+            y_test.append(true_label)
+    y_test = np.array(y_test)
+    y_pred = np.array(y_pred)
+    get_metrics_by_label(y_test, y_pred)
+
 
 # ClassifyTE 训练数据特征的加入
 # 因为 ClassifyTE 对于训练数据的特征提取没有加入classification标签，因此如果要重新训练模型，需要额外对特征提取结果进行处理，加入classification列
@@ -193,7 +363,7 @@ def evaluate_RepeatClassifier(classified_path):
     # 2.2.1 这个文件里包含了RepeatMasker类别、Repbase、wicker类别的转换
     rmToWicker = {}
     wicker_superfamily_set = set()
-    with open(config.work_dir + '/TEClasses.tsv', 'r') as f_r:
+    with open(config.project_dir + '/data/TEClasses.tsv', 'r') as f_r:
         for i,line in enumerate(f_r):
             parts = line.split('\t')
             rm_type = parts[5]
@@ -220,22 +390,45 @@ def evaluate_RepeatClassifier(classified_path):
             wicker_superfamily_set.add(wicker_superfamily)
     #补充一些元素
     rmToWicker['LINE/R2'] = 'R2'
+    rmToWicker['LINE/Tad1'] = 'I'
+    rmToWicker['LINE?/L1'] = 'L1'
+    rmToWicker['LINE/CR1'] = 'I'
+    rmToWicker['DNA/PIF'] = 'PIF-Harbinger'
+    rmToWicker['SINE/ID'] = 'tRNA'
+    rmToWicker['SINE/MIR'] = 'tRNA'
+    rmToWicker['SINE/tRNA-Deu-I'] = 'tRNA'
+    rmToWicker['DNA/CMC'] = 'CACTA'
+    rmToWicker['DNA?/hAT'] = 'hAT'
+    rmToWicker['LTR/ERVL'] = 'Retrovirus'
+    rmToWicker['LINE/R2-NeSL'] = 'R2'
+    rmToWicker['DNA/Zator'] = 'Tc1-Mariner'
     rmToWicker['Unknown'] = 'Unknown'
+
     print(rmToWicker)
     print(wicker_superfamily_set)
     print(len(wicker_superfamily_set))
 
+    # 因为数据集里面没有这四类Ngaro，VIPER，Maverick和PiggyBac，所以我们将预测成这些类别的标记为Unknown
+    filter_labels = ('Ngaro', 'VIPER', 'Maverick', 'PiggyBac')
+
     ## 2.3 获取RepeatClassifier分类后的序列标签，对于未能标注到superfamily的标签或者错误的标签，我们直接标为Unknown （因为我们这里的数据集标签是直接打到了superfamily层级）
     names, contigs = read_fasta_v1(classified_path)
     RC_name_labels = {}
+    all_unique_RM_label = set()
     for name in names:
         label = name.split('#')[1].split(' ')[0]
         if not rmToWicker.__contains__(label):
+            all_unique_RM_label.add(label)
             label = 'Unknown'
         else:
             wicker_superfamily = rmToWicker[label]
             label = wicker_superfamily
+            if label in filter_labels:
+                label = 'Unknown'
+            all_unique_RM_label.add(label)
         RC_name_labels[name.split('#')[0]] = label
+    print('all_unique_RM_label:' + str(all_unique_RM_label))
+
 
     # 2.4 获取test数据的name与标签，然后与RepeatClassifier预测的标签进行评估
     names, contigs = read_fasta_v1(classified_path)
@@ -338,7 +531,7 @@ def evaluate_ClassifyTE(predict_path):
             parts = line.split(',')
             raw_name = parts[0]
             y_label = raw_name.split('\t')[1]
-            y_predict = parts[1]
+            y_predict = parts[-1]
             y_predicts_set.add(y_predict)
             if y_predict == 'gypsy':
                 y_predict = 'Gypsy'
@@ -355,6 +548,42 @@ def evaluate_ClassifyTE(predict_path):
     y_pred = np.array(y_predicts)
     get_metrics_by_label(y_test, y_pred)
 
+def evaluate_TEsorter(pred_path, test_path):
+    label_dict = {'EnSpm_CACTA': 'CACTA', 'pararetrovirus': 'Retrovirus', 'LINE': 'Unknown',
+                  'MuDR_Mutator': 'Mutator', 'mixture': 'Unknown', 'Tc1_Mariner': 'Tc1-Mariner', 'PIF_Harbinger': 'PIF-Harbinger'}
+    pred_names, pred_contigs = read_fasta(pred_path)
+    test_names, test_contigs = read_fasta_v1(test_path)
+    test_dict = {}
+    for name in test_names:
+        parts = name.split('\t')
+        raw_name = parts[0]
+        label = parts[1]
+        test_dict[raw_name] = label
+    pred_labels_set = set()
+    y_test = []
+    y_pred = []
+    for name in pred_names:
+        parts = name.split('#')
+        raw_name = parts[0]
+        label = parts[1]
+        label_parts = label.split('/')
+        if len(label_parts) >= 2:
+            label = label_parts[1]
+        if label_dict.__contains__(label):
+            label = label_dict[label]
+        pred_labels_set.add(label)
+        y_pred.append(label)
+        test_label = test_dict[raw_name]
+        y_test.append(test_label)
+    print(y_test)
+    print(y_pred)
+    print(len(y_test))
+    print(len(y_pred))
+    y_test = np.array(y_test)
+    y_pred = np.array(y_pred)
+    get_metrics_by_label(y_test, y_pred)
+
+
 # 将 repbase 转换成 DeepTE training 模型的输入
 def transform_repbase_to_DeepTE_input(repbase_path, DeepTE_input):
     names, contigs = read_fasta_v1(repbase_path)
@@ -366,6 +595,26 @@ def transform_repbase_to_DeepTE_input(repbase_path, DeepTE_input):
             f_save.write(label+','+seq+'\n')
     print(DeepTE_set)
     print(len(DeepTE_set))
+
+def transform_DeepTE_to_fasta_bak(raw_dataset, repbase_dataset, outpt):
+    repbase_names, repbase_contigs = read_fasta_v1(repbase_dataset)
+    inverted_repbase_contigs = {value: key for key, value in repbase_contigs.items()}
+    filter_contigs = []
+    keep_contigs = {}
+    with open(raw_dataset, 'r') as f_r:
+        for line in f_r:
+            line = line.replace('\n', '')
+            parts = line.split(',')
+            label = parts[0]
+            seq = parts[1]
+            if not inverted_repbase_contigs.__contains__(seq):
+                filter_contigs.append(line)
+            else:
+                repbase_name = inverted_repbase_contigs[seq]
+                keep_contigs[repbase_name] = seq
+    store_fasta(keep_contigs, outpt)
+    print('filter sequences size: ' + str(len(filter_contigs)))
+
 
 def transform_DeepTE_to_fasta(raw_dataset, outpt):
     node_index = 0
@@ -394,6 +643,16 @@ def evaluate_DeepTE(test_path, predict_path):
         # y_labels_dict[seq_name] = wicker_label
         y_labels_dict[seq_name] = label
 
+    unique_predict_labels = set()
+    with open(predict_path, 'r') as f_r:
+        for line in f_r:
+            line = line.replace('\n', '')
+            parts = line.split('\t')
+            seq_name = parts[0]
+            predict = parts[1]
+            unique_predict_labels.add(predict)
+    print(unique_predict_labels)
+
     ## 4.2 将DeepTE的分类标签转成superfamily级别，如果没到superfamily，则为unknown
     DeepTE_labels = {'ClassII_DNA_Mutator_unknown': 'Mutator', 'ClassII_DNA_TcMar_nMITE': 'Tc1-Mariner',
                      'ClassII_DNA_hAT_unknown': 'hAT', 'ClassII_DNA_P_MITE': 'P', 'ClassI_nLTR': 'Unknown',
@@ -409,7 +668,10 @@ def evaluate_DeepTE(test_path, predict_path):
                      'ClassII_DNA_Harbinger_MITE': 'PIF-Harbinger', 'ClassI_nLTR_LINE_L1': 'L1', 'ClassII_nMITE': 'Unknown',
                      'ClassI_LTR_ERV': 'Retrovirus', 'ClassI_LTR_BEL': 'Bel-Pao', 'ClassI_nLTR_LINE_RTE': 'RTE', 'ClassI_nLTR_LINE_R2': 'R2',
                      'ClassII_DNA_Transib_nMITE': 'Transib', 'ClassII_DNA_PiggyBac_nMITE': 'PiggyBac', 'ClassI_nLTR_LINE_Jockey': 'Jockey',
-                     'ClassI_nLTR_SINE_5S': '5S'}
+                     'ClassI_nLTR_SINE_5S': '5S', 'ClassII_DNA_hAT': 'hAT', 'ClassII_DNA_Tc1-Mariner': 'Tc1-Mariner',
+                     'ClassII_DNA_PIF-Harbinger': 'PIF-Harbinger', 'ClassII_DNA_CACTA': 'CACTA', 'ClassII_DNA_Mutator': 'Mutator',
+                     'ClassII_DNA_P': 'P', 'ClassII_DNA_Crypton': 'Crypton', 'ClassII_DNA_Transib': 'Transib', 'ClassI_LTR_Retrovirus': 'Retrovirus',
+                     'ClassI_LTR_Bel-Pao': 'Bel-Pao', 'ClassII_DNA_Merlin': 'Merlin'}
 
     y_predict_seq_names = []
     y_predicts = []
@@ -675,3 +937,20 @@ def plot_3D_param(x, y, z):
     surf=ax3.plot_surface(X, Y, Z, cmap='BuPu', linewidth=0, antialiased=False)
     fig.colorbar(surf)
     plt.show()
+
+def generate_TERL_dataset(fasta_file, outdir):
+    os.makedirs(outdir, exist_ok=True)
+    contignames, contigs = read_fasta_v1(fasta_file)
+    label_seqs = {}
+    for name in contignames:
+        label = name.split('\t')[1]
+        if not label_seqs.__contains__(label):
+            label_seqs[label] = {}
+        cur_label_seqs = label_seqs[label]
+        cur_label_seqs[name] = contigs[name]
+    for label in label_seqs.keys():
+        cur_label_path = outdir + '/' + label + '.fa'
+        store_fasta(label_seqs[label], cur_label_path)
+
+def generate_ClassifyTE_dataset(fasta_file):
+    filter_path = filterRepbase(fasta_file, config.ClassifyTE_class)

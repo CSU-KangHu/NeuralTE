@@ -1,269 +1,469 @@
+# NeuralTE
+[![GitHub](https://img.shields.io/badge/python-3-blue)](https://www.python.org/)
+[![GitHub](https://img.shields.io/badge/license-GPL--3.0-green)](https://github.com/CSU-KangHu/HiTE/blob/master/LICENSE)
+[![DockerHub](https://img.shields.io/badge/Singularity-support-blue)](https://docs.sylabs.io/guides/3.5/user-guide/introduction.html)
+[![DockerHub](https://img.shields.io/badge/Docker-support-orange)](https://hub.docker.com/repository/docker/kanghu/hite/general)
+[![Conda](https://img.shields.io/badge/Conda-support-yellow)](https://docs.conda.io/en/latest/)
+
+`NeuralTE` uses a Convolutional Neural Network (CNN) to classify the TE library at the **superfamily** level, based on the **sequence** and **structural features** of transposable elements (TEs).
 
 
-DeepTE
-===
-DeepTE is aimed to classify transposons with unknown classification *via* Convolutional Neural Network.
+## Table of Contents
+- [Installation](#install)
+- [Trained models](#models)
+- [Demo data](#demo)
+- [Train a new model](#train_model)
+- [Usage](#cmd)
+- [Experiment reproduction](#ER)
+- [More tutorials](#QA)
 
-# Updating
-**10/22/2022**  
-Update a common issue section.  
+## <a name="install"></a>Installation
+NeuralTE is built on [Python3](https://www.python.org/) and [Keras](https://keras.io/).
+   - Prerequisites: \
+       [Python3](https://www.python.org/) (version=3.8.16)\
+       [CUDA Toolkit](https://anaconda.org/anaconda/cudatoolkit) (version>=11.2, for GPU only)
+   - Dependencies: \
+       [tensorflow](https://www.tensorflow.org/) (version=2.6.0) \
+       [Keras](https://keras.io/) (version=2.6.0) \
+       [numpy](http://www.numpy.org/) \
+       [biopython](https://biopython.org/) \
+       [scikit-learn](https://scikit-learn.org/stable/) \
+       [matplotlib](https://matplotlib.org/) \
+       [seaborn](https://seaborn.pydata.org/) \
+       [rmblast](https://www.repeatmasker.org/rmblast/) \
+       [openpyxl](https://openpyxl.readthedocs.io/)
 
-**08/22/2022**  
-Add a training example dir that helps users to do the training based on their own datasets.  
+#### System Requirements
+`NeuralTE` requires a standard computer to use the Convolutional Neural Network (CNN). Using GPU could acceralate the process of TE classification.
 
-**12/25/2020**  
-Add a proability threshold to annotate TEs. For example, a TE has a probability (0.6) to be ClassI, If users set 0.7 as the threshold, this TE will be labeled as 'unknown', Default: 0.6.  
+Recommended Hardware requirements: 40 CPU processors, 128 GB RAM.
 
-**08/15/2020**  
-In the 'store_temp_opt_dir' of the working_dir, we add information about probability of each family the input TE belongs to.   
+Recommended OS: (Ubuntu 16.04, CentOS 7, etc.)
 
-# Introduction
-Transposable elements (TEs) classification is an essential step decoding their roles in a genome. With reference genomes from non-model species available, it has begun to overstep efforts to annotate TEs, and more tools are needed to efficiently handle the emerged sequence information. We developed a novel tool, DeepTE, which classifies unknown TEs on basis of convolutional neural network. DeepTE utilized co-occurrence of k-mers towards TE sequences as input vector, and seven k-mer size was testified to be suitable for the classification. Eight models have been trained for different TE classification purposes. DeepTE applied domains from TEs to correct false classification. An additional model was also trained to distinguish between non-TEs and TEs targeting plant species. 
+#### 运行前须知
+`NeuralTE` 使用了structure features如long terminal repeats, terminal inverted repeats, and target site duplications来帮助分类，
+因此我们默认输入到NeuralTE中的TE library为full-length TEs，即具有完整的TE结构，我们推荐使用[HiTE](https://github.com/CSU-KangHu/HiTE)来生成TE libraries。
+如果输入的TE不具备任何的domain特征，同时是结构不完整的碎片化TE，我们推荐使用配置了[完整Dfam library](https://www.repeatmasker.org/RepeatMasker/)的[RepeatClassifier](https://github.com/Dfam-consortium/RepeatModeler/blob/master/RepeatClassifier)利用同源搜索进行分类。
 
-Given exclusive TEs of different species type, it can therefore classify seven orders, and 11-24 superframilies towards Plants, Metazoans, Fungi, and Others. This tool successfully leverages convolutional neural network to TE classification, assisting to precisely identify and annotate TEs in a new sequenced eukaryotic genome.
+```sh
+git clone https://github.com/CSU-KangHu/NeuralTE.git
+# Alternatively, you can download the zip file directly from the repository.
+cd NeuralTE
+chmod +x tools/*
 
-# Dependence and requirements
-DeepTE is developed in Python with modules and external tools.
+conda env create --name NeuralTE -f environment.yml
+```
 
-Before running this pipeline, a dependency check should be performed first to make sure every dependency is correctly installed.
+## <a name="models"></a>Pre-trained models
+#### Model Differences:
+* NeuralTE Model: \
+The [NeuralTE model]() uses sequence k-mer, terminal, TE domain, and 5bp terminal features, trained using Repbase version 28.06. 
+* NeuralTE-TSDs Model: \
+The [NeuralTE-TSDs model]() uses sequence k-mer, terminal, TE domain, 5bp terminal, and **target site duplications (TSDs)** features, trained using partial species data (463 species) from Repbase version 28.06. This model needs to be used with the corresponding genome of the species.
 
-For information about installing the dependencies, please see below. The version numbers listed below represents the version this pipeline is developed with, and using the newest version is recommended.
+## <a name="reformat"></a>Input Format Conversion
 
-## Requirements
-### Use conda to install required packages (Recommend)
-Install **conda**: https://www.anaconda.com/products/individual  
-conda create -n py36 python=3.6  
-conda activate py36  
-conda install tensorflow-gpu=1.14.0  
-conda install biopython  
-conda install keras=2.2.4  
-conda install numpy=1.16.0  
-pip install sklearn
+To reduce redundancy, many tools for TE identification separate the LTR termini and internal sequences of LTR retrotransposons in their output, which can affect the accurate classification of LTR retrotransposons.
 
-### Use pip to install required packages
-**Python** (v3.6 or more)  
-Modules can be installed using pip: pip install -r requirements.txt or pip install [module_name]  
-**Module version**  
-biopython (1.72)  
-keras (2.2.4)  
-tensorflow (1.14.0)  
-numpy (1.16.0)  
-sklearn (0.24.2) (It is used for the training example)  
+We recommend using a complete TE library or reconstructing full-length LTR sequences based on LTR termini and internal sequences for proper classification.
 
-## Optional requirements
-**HMMER** v3.1b1
+Regarding the output results from three popular TE identification tools (EDTA, RepeatModeler2, HiTE), we categorize the TE library into two types:
 
-**Model_dir**  
-Download the model dir from the cyVerse link  
-Plants:  
-https://de.cyverse.org/dl/d/89D2FE7A-41BA-4F64-80E2-B9C26D49E99F/Plants_model.tar.gz  
-Metazoans:  
-https://de.cyverse.org/dl/d/441459EF-6DDD-41A5-A9AB-1D5D13049F18/Metazoans_model.tar.gz  
-Fungi:  
-https://de.cyverse.org/dl/d/8B112733-063A-4DE9-89EC-22A062D8807B/Fungi_model.tar.gz  
-Others:  
-https://de.cyverse.org/dl/d/34CF8ACB-0B1F-4210-8359-366A70539F01/Others_model.tar.gz  
-UNS models:  
-https://de.cyverse.org/dl/d/3280369B-030A-4ADF-8B6F-EDD4EC21DC4A/UNS_model.tar.gz  
+1. TE libraries whose headers do not include the correspondence between LTR termini and internal sequences:
+   1. The TE library output by EDTA is named $genome.mod.EDTA.TElib.fa, lacking the information in the sequence headers to determine the correspondence between LTR termini and internal sequences. Thus, we recommend using the complete TE library outputted by EDTA for classification, $genome.mod.EDTA.final/$genome.mod.EDTA.intact.fa.
 
-Download the model dir from the google link  
-Plants:  
-https://drive.google.com/file/d/1voj86STKcQH8lAhvY6yl5E65nzaM6o0B/view?usp=sharing  
-Metazoans:  
-https://drive.google.com/file/d/1ExRwC3szJ4XMa3ikxM9Ccu31lY79rdw9/view?usp=sharing  
-Fungi:  
-https://drive.google.com/file/d/1uvnm99ypauIKtqCxoybdtT-mEMdoupip/view?usp=sharing  
-Others:  
-https://drive.google.com/file/d/1Q6HW1NhNs0a6Ykrw7jGEKKPWxawpWiuM/view?usp=sharing  
-UNS model:  
-https://drive.google.com/file/d/1uXTEtNQtJc2DO-JpT0s4Kv1k2ogUjCLr/view?usp=sharing
+2. TE libraries whose headers include the correspondence between LTR termini and internal sequences:
+   1. The TE library output by RepeatModeler2 is named ${species}-families.fa, containing headers with information about the correspondence between LTR termini and internal sequences, such as `>ltr-1_family-1#LTR/Gypsy [ Type=LTR, Final Multiple Alignment Size = 68 ]` and `>ltr-1_family-2#LTR/Gypsy [ Type=INT, Final Multiple Alignment Size = 22 ]`.
+   For the TE library output from RepeatModeler2, we recommend using `NeuralTE/utils/reName_RM2.py` to rename the headers of the input TE library, formatted as `>Gypsy-171_OS-I` and `>Gypsy-171_OS-LTR`.
+   2. The TE library output by HiTE is named confident_TE.cons.fa, containing headers with information about the correspondence between LTR termini and internal sequences, such as `>ltr_1241-INT` and `>ltr_1241-LTR`.
+   The TE library output by HiTE does not require additional processing.
 
+```sh
+# 1. Rename the LTR retrotransposons in the TE library output from RepeatModeler2, format: `RM2_intactLTR_114-LTR` and `RM2_intactLTR_114-I`
+python ${pathTo}/NeuralTE/utils/reName_RM2.py \
+ -i ${pathTo}/${species}-families.fa \
+ -o ${pathTo}/${species}-families.rename.fa
+```
+
+## <a name="reformat"></a>输入格式转换
+为了减少冗余，目前许多 TEs 识别的工具输出都将LTR转座子的LTR终端和LTR内部序列分开存储，这会影响对LTR转座子正确地分类。
+我们推荐使用完整的TE library，或者根据LTR终端和内部序列恢复完整的LTR序列，然后进行分类。
+针对当前热门的三种TE识别工具(EDTA, RepeatModeler2, HiTE)的输出结果，我们将TE library划分为两类:
+1. TE library的header中不包含LTR终端和内部序列对应关系
+   1. EDTA输出的TE library为$genome.mod.EDTA.TElib.fa，无法根据序列的header来判断LTR终端和内部序列的对应关系，因此我们推荐使用EDTA输出的完整TE library 进行分类，$genome.mod.EDTA.final/$genome.mod.EDTA.intact.fa。
+2. TE library的header中包含LTR终端和内部序列对应关系
+   1. RepeatModeler2输出的TE library为${species}-families.fa，它的header中包含了LTR终端和内部序列的对应关系，如`>ltr-1_family-1#LTR/Gypsy [ Type=LTR, Final Multiple Alignment Size = 68 ]`和 `>ltr-1_family-2#LTR/Gypsy [ Type=INT, Final Multiple Alignment Size = 22 ]`。
+   针对RepeatModeler2输出的TE library，我们推荐使用`NeuralTE/utils/reName_RM2.py` 将输入的TE library的header重命名，格式如`>Gypsy-171_OS-I`和`>Gypsy-171_OS-LTR`。
+   2. HiTE输出的TE library为confident_TE.cons.fa，它的header中包含了LTR终端和内部序列的对应关系，如`>ltr_1241-INT`和`>ltr_1241-LTR`。
+   HiTE输出的TE library不需要额外处理。
+
+```sh
+# 1.将RepeatModeler2输出的TE library中的LTR转座子重命名，格式为: `RM2_intactLTR_114-LTR` 和 `RM2_intactLTR_114-I`
+python ${pathTo}/NeuralTE/utils/reName_RM2.py \
+ -i ${pathTo}/${species}-families.fa \
+ -o ${pathTo}/${species}-families.rename.fa
+```
+
+## <a name="demo"></a>Demo data
+
+Please refer to `NeuralTE/demo` for some demo data to play with:
+* _test.fa_: demo TE library.
+* _genome.fa_: demo genome sequence.
+
+```sh
+# 1.Classify TE library without genome
+# inputs: 
+#       --data: TE library to be classified.
+#       --model_path: Pre-trained Neural TE model without using TSDs features.
+#       --outdir: Output directory. The `--outdir` should not be the same as the directory where the `--data` file is located.
+# outputs: 
+#       classified.info: Classification labels corresponding to TE names.
+#       classified_TE.fa: Classified TE library.
+python ${pathTo}/NeuralTE/src/Classifier.py \
+ --data ${pathTo}/NeuralTE/demo/test.fa \
+ --model_path ${pathTo}/NeuralTE/models/NeuralTE_model.h5 \
+ --outdir ${outdir} \
+ --thread ${threads_num}
+
+ # e.g., my command: python /home/hukang/NeuralTE/src/Classifier.py \
+ # --data /home/hukang/NeuralTE/demo/test.fa \
+ # --model_path /home/hukang/NeuralTE/models/NeuralTE_model.h5 \
+ # --outdir /home/hukang/NeuralTE/work \
+ # --thread 40
+ 
+ 
+ # 2.Classify the TE library with genome
+ #       test.fa: TE library to be classified 
+ #       genome.fa: The genome corresponding to TE library
+ #       NeuralTE-TSDs_model.h5: Pre-trained Neural TE model using TSDs features
+ # outputs: 
+ #       classified.info: Classification labels corresponding to TE names
+ #       classified_TE.fa: Classified TE library
+python ${pathTo}/NeuralTE/src/Classifier.py \
+ --data ${pathTo}/NeuralTE/demo/test.fa \
+ --genome ${pathTo}/NeuralTE/demo/genome.fa \
+ --is_plant 1 \
+ --use_TSD 1 \
+ --model_path ${pathTo}/NeuralTE/models/NeuralTE-TSDs_model.h5 \
+ --outdir ${outdir} \
+ --thread ${threads_num}
+
+ # e.g., my command: python /home/hukang/NeuralTE/src/Classifier.py \
+ # --data /home/hukang/NeuralTE/demo/test.fa \
+ # --genome /home/hukang/NeuralTE/demo/genome.fa \
+ # --is_plant 1 \
+ # --use_TSD 1 \
+ # --model_path /home/hukang/NeuralTE/models/NeuralTE-TSDs_model.h5 \
+ # --outdir /home/hukang/NeuralTE/work \
+ # --thread 40
+```
+
+## <a name="demo"></a>使用某个物种的Repbase library评估NeuralTE性能
+这一块后面不需要，要去掉。
+```sh
+ # 2.评估NeuralTE with genome
+ #       test.fa: TE library to be classified 
+ #       genome.fa: The genome corresponding to TE library
+ #       NeuralTE-TSDs_model.h5: Pre-trained Neural TE model using TSDs features
+ # outputs: 
+ #       classified.info: Classification labels corresponding to TE names
+ #       classified_TE.fa: Classified TE library
+python ${pathTo}/NeuralTE/src/Classifier.py \
+ --data ${pathTo}/repbase.ref \
+ --genome ${pathTo}/genome.fa \
+ --species '${species_name}' \
+ --is_plant 1 \
+ --use_TSD 1 \
+ --is_predict 0 \
+ --model_path ${pathTo}/NeuralTE/models/NeuralTE-TSDs_model.h5 \
+ --outdir ${outdir} \
+ --thread ${threads_num} \
+ --is_wicker 1
+ # e.g., my command: python /home/hukang/NeuralTE/src/Classifier.py \
+ # --data /home/hukang/Repbase/oryrep.ref \
+ # --genome /home/hukang/Genome/GCF_001433935.1_IRGSP-1.0_genomic.fna \
+ # --species 'Oryza sativa' \
+ # --is_plant 1 \
+ # --use_TSD 1 \
+ # --is_predict 0 \
+ # --model_path /home/hukang/NeuralTE/models/NeuralTE-TSDs_model.h5 \
+ # --outdir /home/hukang/NeuralTE/work \
+ # --thread 40 \
+ # --is_wicker 1
+```
+
+## <a name="train_model"></a>Train a new model
+- Prerequisites: \
+       [Repbase*.fasta.tar.gz](https://www.girinst.org/server/RepBase/index.php) (version>=28.06)\
+       [Genomes](https://www.ncbi.nlm.nih.gov/) (Optional, for TSDs model only)
+
+```sh
+ # 0. preprocess repbase database （包含合并repbase子文件，连接LTR终端和内部序列，过滤不完整的LTR转座子等功能）
+ # inputs: 
+ #        repbase_dir: 包含所有Repbase文件的目录 
+ #        out_dir: 包含预处理之后结果的输出目录
+ # outputs: 
+ #        all_repbase.ref: 所有Repbase数据库序列
+python ${pathTo}/utils/preprocess_repbase.py \
+ --repbase_dir ${pathTo}/RepBase*.fasta \
+ --out_dir ${out_dir}
+ # e.g., my command: python /home/hukang/NeuralTE/utils/preprocess_repbase.py \
+ # --repbase_dir /home/hukang/RepBase28.06.fasta/ \
+ # --out_dir /home/hukang/test/
+ 
+ 
+ # 1. split train test datasets
+ # inputs: 
+ #        data_path: 所有Repbase数据库序列
+ #        out_dir: 数据集划分后的输出目录
+ #        ratio: Ratio of training set to test set
+ # outputs: 
+ #        train.ref: 所有Repbase数据库序列的80%形成训练集
+ #        test.ref:所有Repbase数据库序列的20%形成测试集
+python ${pathTo}/utils/split_train_test.py \
+ --data_path ${pathTo}/all_repbase.ref \
+ --out_dir ${out_dir} \
+ --ratio 0.8
+ # e.g., my command: python /home/hukang/NeuralTE/utils/split_train_test.py \
+ # --data_path /home/hukang/test/all_repbase.ref \
+ # --out_dir /home/hukang/test/ \
+ # --ratio 0.8
+
+
+ # 2.Train a new NeuralTE Model
+ # inputs: 
+ #        train.ref: 训练集
+ # outputs: 
+ #        model_${time}.h5: Generate h5 format file in the ${pathTo}/NeuralTE/models directory
+python ${pathTo}/NeuralTE/src/Trainer.py \
+ --data ${pathTo}/train.ref \
+ --is_train 1 \
+ --is_predict 0 \
+ --outdir ${outdir} \
+ --thread ${threads_num}
+ # e.g., my command: python /home/hukang/NeuralTE/src/Trainer.py \
+ # --data /home/hukang/NeuralTE/data/train.ref \
+ # --is_train 1 \
+ # --is_predict 0 \
+ # --outdir /home/hukang/NeuralTE/work \
+ # --thread 40
+ # 替换原模型
+ cd ${pathTo}/NeuralTE/models && mv model_${time}.h5 NeuralTE_model.h5
+ 
+ 
+ # 3.Train a new NeuralTE-TSDs Model
+ # inputs: 
+ #        train.ref: 训练集
+ #        genome.info: Modify the 'genome.info' file in the ${pathTo}/NeuralTE/data directory. Ensure that 'Scientific Name' corresponds to the species names in `train.ref`, and 'Genome Path' should be an absolute path.
+ # outputs: 
+ #        model_${time}.h5: Generate h5 format file in the ${pathTo}/NeuralTE/models directory
+python ${pathTo}/NeuralTE/src/Trainer.py \
+ --data ${pathTo}/train.ref \
+ --genome ${pathTo}/NeuralTE/data/genome.info \
+ --is_train 1 \
+ --is_predict 0 \
+ --use_TSD 1 \
+ --outdir ${outdir} \
+ --thread ${threads_num}
+ # e.g., my command: python /home/hukang/NeuralTE/src/Trainer.py \
+ # --data /home/hukang/NeuralTE/data/train.ref \
+ # --genome /home/hukang/NeuralTE/data/genome.info \
+ # --is_train 1 \
+ # --is_predict 0 \
+ # --use_TSD 1 \
+ # --outdir /home/hukang/NeuralTE/work \
+ # --thread 40
+ # 替换原模型
+cd ${pathTo}/NeuralTE/models && mv model_${time}.h5 NeuralTE-TSDs_model.h5
+
+
+ # 4.CrossValidator 进行五折交叉验证
+ # inputs: 
+ #        all_repbase.ref: 所有具有TSD特征的Repbase数据
+ # outputs: 
+ #        model_fold_{fold}.h5: Generate h5 format file in the ${pathTo}/NeuralTE/models directory
+python ${pathTo}/NeuralTE/src/CrossValidator.py \
+ --data ${pathTo}/all_repbase.ref \
+ --use_TSD 1 \
+ --use_terminal 1 \
+ --use_domain 1 \
+ --use_ends 1 \
+ --use_kmers 1 \
+ --is_predict 0 \
+ --thread ${threads_num}
+ # e.g., my command: python /home/hukang/NeuralTE/src/CrossValidator.py \
+ # --data /home/hukang/NeuralTE/data/TSD_data/all_repbase.ref \
+ # --use_TSD 1 \
+ # --use_terminal 1 \
+ # --use_domain 1 \
+ # --use_ends 1 \
+ # --use_kmers 1 \
+ # --is_predict 0 \
+ # --thread 40
+```
+
+## <a name="reproduction"></a>Experiment reproduction
+- Prerequisites: \
+       [Repbase*.fasta.tar.gz](https://www.girinst.org/server/RepBase/index.php) (version>=28.06)\
+       [Genomes](https://www.ncbi.nlm.nih.gov/) (Optional, for TSDs model only)
+
+```sh
+ # 1.重现Dataset1对应的实验结果
+ # 1.1 不使用TSDs特征
+ # inputs: 
+ #        repbase_test.fa: Merge all subfiles within the Repbase directory to generate repbase.fa, and extract 20% of the sequences to create repbase_test.ref.
+ #        NeuralTE_data1_model.h5: 
+ # outputs: 
+ #        classified.info: Classification labels corresponding to TE names
+ #        classified_TE.fa: Classified TE library 
+ #        confusion_matrix.png: Confusion matrix of prediction results.
+python ${pathTo}/NeuralTE/src/Classifier.py \
+ --data ${pathTo}/repbase_test.fa \
+ --model_path ${pathTo}/NeuralTE/models/NeuralTE_data1_model.h5
+ --use_TSD 0 \
+ --is_predict 0 \
+ --outdir ${outdir} \
+ --thread ${threads_num}
+ # e.g., my command: python /home/hukang/NeuralTE/src/Classifier.py \
+ # --data /home/hukang/NeuralTE/data/repbase_test.fa \
+ # --model_path /home/hukang/NeuralTE/models/NeuralTE_data1_model.h5 \
+ # --use_TSD 0 \
+ # --is_predict 0 \
+ # --outdir /home/hukang/NeuralTE/work \
+ # --thread 40
+ 
+ 
+ # 1.2 使用TSDs特征
+ # inputs: 
+ #        repbase_test.fa: Merge all subfiles within the Repbase directory to generate repbase.fa, and extract 20% of the sequences to create repbase_test.ref.
+ #        NeuralTE_data1_model.h5: 
+ # outputs: 
+ #        classified.info: Classification labels corresponding to TE names
+ #        classified_TE.fa: Classified TE library 
+ #        confusion_matrix.png: Confusion matrix of prediction results.
+python ${pathTo}/NeuralTE/src/Classifier.py \
+ --data ${pathTo}/repbase_test.fa \
+ --genome ${pathTo}/NeuralTE/data/genome.info
+ --model_path ${pathTo}/NeuralTE/models/NeuralTE_data1-TSDs_model.h5
+ --use_TSD 1 \
+ --is_predict 0 \
+ --outdir ${outdir} \
+ --thread ${threads_num}
+ # e.g., my command: python /home/hukang/NeuralTE/src/Classifier.py \
+ # --data /home/hukang/NeuralTE/data/repbase_test.fa \
+ # --model_path /home/hukang/NeuralTE/models/NeuralTE_data1-TSDs_model.h5 \
+ # --use_TSD 1 \
+ # --is_predict 0 \
+ # --outdir /home/hukang/NeuralTE/work \
+ # --thread 40
+```
+
+```sh
+# 重现消融实验 (所有消融实验结果都基于五折交叉验证)
+## Dataset2 (所有转座子)
+## 1. 使用所有特征
+python /home/hukang/NeuralTE/src/CrossValidator.py --data /home/hukang/NeuralTE_dataset/Dataset2/all_repbase.ref --is_predict 0 --use_TSD 1 --use_kmers 1 --use_terminal 1 --use_domain 1 --use_ends 1 --outdir /home/hukang/NeuralTE/work/cross_validate
+## 2. 使用除domain特征外的所有其余特征
+python /home/hukang/NeuralTE/src/CrossValidator.py --data /home/hukang/NeuralTE_dataset/Dataset2/all_repbase.ref --is_predict 0 --use_TSD 1 --use_kmers 1 --use_terminal 1 --use_domain 0 --use_ends 1 --outdir /home/hukang/NeuralTE/work/cross_validate
+## 3. 使用除k-mer特征外的所有其余特征
+python /home/hukang/NeuralTE/src/CrossValidator.py --data /home/hukang/NeuralTE_dataset/Dataset2/all_repbase.ref --is_predict 0 --use_TSD 1 --use_kmers 0 --use_terminal 1 --use_domain 1 --use_ends 1 --outdir /home/hukang/NeuralTE/work/cross_validate
+## 4. 使用除TSDs特征外的所有其余特征
+python /home/hukang/NeuralTE/src/CrossValidator.py --data /home/hukang/NeuralTE_dataset/Dataset2/all_repbase.ref --is_predict 0 --use_TSD 0 --use_kmers 1 --use_terminal 1 --use_domain 1 --use_ends 1 --outdir /home/hukang/NeuralTE/work/cross_validate
+## 5. 使用除terminal特征外的所有其余特征
+python /home/hukang/NeuralTE/src/CrossValidator.py --data /home/hukang/NeuralTE_dataset/Dataset2/all_repbase.ref --is_predict 0 --use_TSD 1 --use_kmers 1 --use_terminal 0 --use_domain 1 --use_ends 1 --outdir /home/hukang/NeuralTE/work/cross_validate
+## 6. 使用除终端5-bp特征外的所有其余特征
+python /home/hukang/NeuralTE/src/CrossValidator.py --data /home/hukang/NeuralTE_dataset/Dataset2/all_repbase.ref --is_predict 0 --use_TSD 1 --use_kmers 1 --use_terminal 1 --use_domain 1 --use_ends 0 --outdir /home/hukang/NeuralTE/work/cross_validate
+
+## Dataset3 (非自治DNA转座子)
+## 1. 使用所有特征
+python /home/hukang/NeuralTE/src/CrossValidator.py --data /home/hukang/NeuralTE_dataset/Dataset3/all_repbase.non_auto.ref --is_predict 0 --use_TSD 1 --use_kmers 1 --use_terminal 1 --use_domain 1 --use_ends 1 --outdir /home/hukang/NeuralTE/work/cross_validate_non_auto
+## 2. 使用除domain特征外的所有其余特征
+python /home/hukang/NeuralTE/src/CrossValidator.py --data /home/hukang/NeuralTE_dataset/Dataset3/all_repbase.non_auto.ref --is_predict 0 --use_TSD 1 --use_kmers 1 --use_terminal 1 --use_domain 0 --use_ends 1 --outdir /home/hukang/NeuralTE/work/cross_validate_non_auto
+## 3. 使用除k-mer特征外的所有其余特征
+python /home/hukang/NeuralTE/src/CrossValidator.py --data /home/hukang/NeuralTE_dataset/Dataset3/all_repbase.non_auto.ref --is_predict 0 --use_TSD 1 --use_kmers 0 --use_terminal 1 --use_domain 1 --use_ends 1 --outdir /home/hukang/NeuralTE/work/cross_validate_non_auto
+## 4. 使用除TSDs特征外的所有其余特征
+python /home/hukang/NeuralTE/src/CrossValidator.py --data /home/hukang/NeuralTE_dataset/Dataset3/all_repbase.non_auto.ref --is_predict 0 --use_TSD 0 --use_kmers 1 --use_terminal 1 --use_domain 1 --use_ends 1 --outdir /home/hukang/NeuralTE/work/cross_validate_non_auto
+## 5. 使用除terminal特征外的所有其余特征
+python /home/hukang/NeuralTE/src/CrossValidator.py --data /home/hukang/NeuralTE_dataset/Dataset3/all_repbase.non_auto.ref --is_predict 0 --use_TSD 1 --use_kmers 1 --use_terminal 0 --use_domain 1 --use_ends 1 --outdir /home/hukang/NeuralTE/work/cross_validate_non_auto
+## 6. 使用除终端5-bp特征外的所有其余特征
+python /home/hukang/NeuralTE/src/CrossValidator.py --data /home/hukang/NeuralTE_dataset/Dataset3/all_repbase.non_auto.ref --is_predict 0 --use_TSD 1 --use_kmers 1 --use_terminal 1 --use_domain 1 --use_ends 0 --outdir /home/hukang/NeuralTE/work/cross_validate_non_auto
+```
+
+```sh
+# 重现Dataset6水稻实验
+## 1. 使用所有特征
+python /home/hukang/NeuralTE/src/Trainer.py --data /home/hukang/NeuralTE_dataset/Dataset6/train.ref --is_train 1 --is_predict 0 --use_TSD 1 --outdir /home/hukang/NeuralTE/work/dataset6
+python /home/hukang/NeuralTE/src/Classifier.py --data /home/hukang/NeuralTE_dataset/Dataset6/test.ref --use_TSD 1 --is_predict 0 --model_path /home/hukang/NeuralTE/models/model_2023-12-21.10-25-26.h5 --outdir /home/hukang/NeuralTE/work/dataset6 --threads 40
+```
 
 # Usage
+#### 1. Classify TE library
+```shell
+usage: Classifier.py [-h] [--data data] [--outdir output_dir] [--genome genome] [--model_path model_path] [--use_terminal use_terminal] [--use_TSD use_TSD] [--use_domain use_domain] [--use_ends use_ends]
+                     [--is_predict is_predict] [--is_wicker is_wicker] [--is_plant is_plant] [--threads thread_num] [--internal_kmer_sizes internal_kmer_sizes] [--terminal_kmer_sizes terminal_kmer_sizes]
+
+########################## NeuralTE, version 1.0.0 ##########################
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --data data           Input fasta file used to predict, header format: seq_name label species_name, refer to "data/test.example.fa" for example.
+  --outdir output_dir   Output directory, store temporary files
+  --genome genome       Genome path, use to search for TSDs
+  --model_path model_path
+                        Input the path of trained model, absolute path.
+  --use_terminal use_terminal
+                        Whether to use LTR, TIR terminal features, 1: true, 0: false. default = [ 1 ]
+  --use_TSD use_TSD     Whether to use TSD features, 1: true, 0: false. default = [ 0 ]
+  --use_domain use_domain
+                        Whether to use domain features, 1: true, 0: false. default = [ 1 ]
+  --use_ends use_ends   Whether to use 5-bp terminal ends features, 1: true, 0: false. default = [ 1 ]
+  --is_predict is_predict
+                        Enable prediction mode, 1: true, 0: false. default = [ 1 ]
+  --is_wicker is_wicker
+                        Use Wicker or RepeatMasker classification labels, 1: Wicker, 0: RepeatMasker. default = [ 1 ]
+  --is_plant is_plant   Is the input genome of a plant? 0 represents non-plant, while 1 represents plant. default = [ 0 ]
+  --threads thread_num  Input thread num, default = [ 104 ]
+  --internal_kmer_sizes internal_kmer_sizes
+                        The k-mer size used to convert internal sequences to k-mer frequency features, default = [ [1, 2, 4] MB ]
+  --terminal_kmer_sizes terminal_kmer_sizes
+                        The k-mer size used to convert terminal sequences to k-mer frequency features, default = [ [1, 2, 4] ]
 ```
-usage:
-**DeepTE**
-DeepTE.py [-h] required: [-d working_dir][-o output_dir]
-                         [-i ipt_seq][-sp sp_type]
-                         ([-m model_name]|[-m_dir model_dir])
-               optional: [-modify domain_file]
-                         [-fam te_fam][-UNS yes][-prop_thr value]
+#### 2. train a new model
+```shell
+usage: Trainer.py [-h] [--data data] [--outdir output_dir] [--use_terminal use_terminal] [--use_TSD use_TSD] [--use_domain use_domain] [--use_ends use_ends] [--threads thread_num]
+                  [--internal_kmer_sizes internal_kmer_sizes] [--terminal_kmer_sizes terminal_kmer_sizes] [--cnn_num_convs cnn_num_convs] [--cnn_filters_array cnn_filters_array]
+                  [--cnn_kernel_sizes_array cnn_kernel_sizes_array] [--cnn_dropout cnn_dropout] [--batch_size batch_size] [--epochs epochs] [--use_checkpoint use_checkpoint]
 
-arguments:
--h, --help        Show this help message and exit.
+########################## NeuralTE, version 1.0.0 ##########################
 
--d                Working directory to store intermediate files of each step. 
-                  Default: ./.
-
--o                Output directory to store the output files. 
-                  Default: ./.
-
--i                Input sequences that are unknown TE or DNA sequences.
-
--sp               P or M or F or O. P:Plants, M:Metazoans, F:Fungi, and O: Others.
-
--m                Provide one of model names: 
-                  '-m P' or '-m M' or '-m F' or '-m O' or '-m U'.
-                  This argument will directly download the model dir.
-                  Users do not need to initiate '-m_dir'.
-                  If users do not want to directly download model, please use '-m_dir', but users need to download model directory by themselves.
-
--m_dir            Provide model_dir that could be downloaded from website (optional requirements). 
-                  If users set -UNS yes, please provide UNS_model directory that can be downlowed in the above link.
-
--fam              Provide TE family name for the input te sequence
-                  ClassI: the input sequence is ClassI TEs
-                  ClassII: the input sequence is ClassII subclass1 TEs
-                  LTR: the input sequence is LTR TEs
-                  nLTR: the input sequence is nLTR TEs
-                  LINE: the input sequence is LINE TEs
-                  SINE: the input sequence is SINE TEs
-                  Domain: the input sequence is Class II subclass1 TEs with specified super families
-                  If users do not initiate '-fam', DeepTE will regard your input sequences are unknown TEs.
-
--modify           If set this argument, users need to provide domain file generated from another script: DeepTE_domain.py.
-
--UNS              If set this argument, users need change the -i to the the DNA sequences; 
-                  This function will classify the sequences into TEs, CDS, or Intergenic sequences; -sp and -fam do not need to provide.
-                  Note: this model is used for plants rather than metazoans and fungi.
-
--prop_thr         Specify a probability threshold to annotate TE.
-                  For example: a TE has a probability (0.6) to be ClassI.
-                  If users set 0.7 as the threshold, 
-                  this TE will be labeled as 'unknown', Default: 0.6.
-
-
-**DeepTE_domain**
-DeepTE_domain.py [-h] required: [-d working_dir][-o output_dir]
-                                [-i ipt_seq][-s supfile_dir]
-                                [--hmmscan hmmscan]
-arguments:
--h, --help        Show this help message and exit.
-
--d                Working directory to store intermediate files of each step. 
-                  Default: ./.
-
--o                Output directory to store the output files. 
-                  Default: ./.
-
--i                Input sequences that are unknown TE sequences.
-
--s                Provide supplementary dir that contains required files.
-
---hmmscan         File path to hmmscan executable, Default: /usr/bin/hmmscan"
-
-
+optional arguments:
+  -h, --help            show this help message and exit
+  --data data           Input fasta file used to train model, header format: seq_name label species_name, refer to "data/train.example.fa" for example.
+  --outdir output_dir   Output directory, store temporary files
+  --use_terminal use_terminal
+                        Whether to use LTR, TIR terminal features, 1: true, 0: false. default = [ 1 ]
+  --use_TSD use_TSD     Whether to use TSD features, 1: true, 0: false. default = [ 0 ]
+  --use_domain use_domain
+                        Whether to use domain features, 1: true, 0: false. default = [ 1 ]
+  --use_ends use_ends   Whether to use 5-bp terminal ends features, 1: true, 0: false. default = [ 1 ]
+  --threads thread_num  Input thread num, default = [ 104 ]
+  --internal_kmer_sizes internal_kmer_sizes
+                        The k-mer size used to convert internal sequences to k-mer frequency features, default = [ [1, 2, 4] MB ]
+  --terminal_kmer_sizes terminal_kmer_sizes
+                        The k-mer size used to convert terminal sequences to k-mer frequency features, default = [ [1, 2, 4] ]
+  --cnn_num_convs cnn_num_convs
+                        The number of CNN convolutional layers. default = [ 3 ]
+  --cnn_filters_array cnn_filters_array
+                        The number of filters in each CNN convolutional layer. default = [ [32, 32, 32] ]
+  --cnn_kernel_sizes_array cnn_kernel_sizes_array
+                        The kernel size in each of CNN convolutional layer. default = [ [3, 3, 3] ]
+  --cnn_dropout cnn_dropout
+                        The threshold of CNN Dropout. default = [ 0.5 ]
+  --batch_size batch_size
+                        The batch size in training model. default = [ 32 ]
+  --epochs epochs       The number of epochs in training model. default = [ 50 ]
+  --use_checkpoint use_checkpoint
+                        Whether to use breakpoint training. 1: true, 0: false. The model will continue training from the last failed parameters to avoid training from head. default = [ 0 ]
 ```
-
-
-
-# Examples (Predicting)
-**DeepTE.py**  
-
-**Input data**  
-Sequence data (fasta format)  
-
-**Output data**  
-Working directory  
-a. opt_input_CNN_data.txt (input data that is transfered from user provided input data)  
-b. store_temp_opt_dir (a directory contains prediction results for each TE group; b this directory also contains probability of each family the input TE belongs to)
-c. download_X_model_dir (store downloaded models. X represents P, M, F, O, or U)
-
-Output directory  
-a. opt_DeepTE.txt (a txt file with two columns. first column: original name; second column: predicted name with DeepTE)  
-b. opt_DeepTE.fasta (a fasta file with new predicted TE name)  
-
-**Command**
-- [ ] Classify unknown TEs  
-DeepTE.py -d working_dir -o output_dir -i input_seq.fasta -sp P -m P  
-**Or**  
-DeepTE.py -d working_dir -o output_dir -i input_seq.fasta -sp P -m_dir Plants_model/
-
-- [ ] Classify Class I TEs  
-DeepTE.py -d working_dir -o output_dir -i input_seq.fasta -sp P -m P -fam ClassI  
-**Or**  
-DeepTE.py -d working_dir -o output_dir -i input_seq.fasta -sp P -m_dir Plants_model/ -fam ClassI
-
-- [ ] Classify Class II subclass1 TEs  
-DeepTE.py -d working_dir -o output_dir -i input_seq.fasta -sp P -m P -fam ClassII  
-**Or**  
-DeepTE.py -d working_dir -o output_dir -i input_seq.fasta -sp P -m_dir Plants_model/ -fam ClassII  
-
-- [ ] Classify LTR TEs  
-DeepTE.py -d working_dir -o output_dir -i input_seq.fasta -sp P -m P -fam LTR  
-**Or**  
-DeepTE.py -d working_dir -o output_dir -i input_seq.fasta -sp P -m_dir Plants_model/ -fam LTR
-
-- [ ] Classify nLTR TEs  
-DeepTE.py -d working_dir -o output_dir -i input_seq.fasta -sp P -m P -fam nLTR  
-**Or**  
-DeepTE.py -d working_dir -o output_dir -i input_seq.fasta -sp P -m_dir Plants_model/ -fam nLTR
-
-- [ ] Classify LINE TEs  
-DeepTE.py -d working_dir -o output_dir -i input_seq.fasta -sp P -m P -fam LINE  
-**Or**  
-DeepTE.py -d working_dir -o output_dir -i input_seq.fasta -sp P -m_dir Plants_model/ -fam LINE
-
-- [ ] Classify SINE TEs  
-DeepTE.py -d working_dir -o output_dir -i input_seq.fasta -sp P -m P -fam SINE  
-**Or**  
-DeepTE.py -d working_dir -o output_dir -i input_seq.fasta -sp P -m_dir Plants_model/ -fam SINE
-
-- [ ] Classify TEs into MITEs and nMITEs  
-DeepTE.py -d working_dir -o output_dir -i input_seq.fasta -sp P -m P -fam Domain  
-**Or**  
-DeepTE.py -d working_dir -o output_dir -i input_seq.fasta -sp P -m_dir Plants_model/ -fam Domain  
-
-- [ ] Classify Unknown sequences into TEs, Coding sequences, or Intergenic sequences  
-DeepTE.py -d working_dir -o output_dir -i input_seq.fasta -m U -UNS yes  
-**Or**  
-DeepTE.py -d working_dir -o output_dir -i input_seq.fasta -m_dir UNS_model/ -UNS yes  
-
-**DeepTE_domain.py**  
-**Input data**  
-Sequence data (fasta format)  
-**Command**  
-DeepTE_domain.py -d working_dir -o output_dir -i input_seq.fasta -s supfile_dir --hmmscan   Path/to/hmmscan  
-**Output data**  
-a. TE domain file. (first column: orignial name; second column: domain information for different open reading frames)
-
-
-# Examples (Training)
-For the users who are interested in training models, please try the following training examples.  
-**Input data**  
-ipt_shuffle_All_CNN_data.txt (TEname,sequence_information)  
-input_store_class_report_dir (output directory)  
-
-**Command**  
-pipeline_example_training.py \    
-input_dir/ipt_shuffle_All_CNN_data.txt \   
-input_store_class_report_dir  
-
-**Output data**  
-a. All_model.h5  
-b. All_class_report.txt  
-
-
-# Common issues
-We saw some users who failed to use the DeepTE because of package verisons.  
-Try python3.7 env and install tensor=2.2.0 + keras=2.3.1.  
-Please also see this link:
-https://stackoverflow.com/questions/62690377/tensorflow-compatibility-with-keras
-
-
-# Work flows
-![](https://i.imgur.com/RlCZblM.png)
-
-
-**Figure** A pipeline for classifying unknown TEs and sequences based on trained nine models. The unknown TEs go through eight models to be classified into different families. Two correction steps are conducted during classification. In Class model, TR domain exists in predicted Class I TEs that will be corrected to Class II_sub1 TEs, while RT domain exists in predicted Class II_sub1 TEs that will be corrected to Class I TEs. In ClassI model, EN domain exists in predicted LTR TEs will be correct to nLTR TEs. The unknown sequences go through UNS model to be classified into TEs, coding sequences (CDS), and intergenic sequences (INS).
-
-## Citation
-Haidong Yan, Aureliano Bombarely, Song Li 2020 DeepTE: a computational method for de novo classification of transposons with convolutional neural network. Bioinformatics, Volume 36, Issue 15, 1 August 2020, Pages 4269–4275.
-
-## Appendix and FAQ
-
-:::info
-**Find this document incomplete?** Leave a comment!
-:::
 
 
