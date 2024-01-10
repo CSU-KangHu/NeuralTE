@@ -1,19 +1,18 @@
 import argparse
 import os
 import random
-import re
 import sys
 
 current_folder = os.path.dirname(os.path.abspath(__file__))
-# 添加 configs 文件夹的路径到 Python 路径
-configs_folder = os.path.join(current_folder, "..")  # 需要根据实际目录结构调整
+# Add the path to the 'configs' folder to the Python path
+configs_folder = os.path.join(current_folder, "..")
 sys.path.append(configs_folder)
 
 from configs import config
 from utils.data_util import read_fasta_v1, read_fasta, store_fasta
 
 def split_dataset(sequences, train_output_file, test_output_file, split_ratio=0.8):
-    # 将数据集按照类别保存，每一类的数据按照8:2制作训练集和测试集
+    # Save the dataset by category, dividing data in each category into 80% for training and 20% for testing.
     sequences_types = {}
     for name in sequences.keys():
         label = name.split('\t')[1]
@@ -27,7 +26,7 @@ def split_dataset(sequences, train_output_file, test_output_file, split_ratio=0.
     for label in sequences_types.keys():
         cur_label_sequences = sequences_types[label]
 
-        # 随机划分训练集和测试集
+        # Randomly partition the dataset into training and testing sets.
         all_ids = list(cur_label_sequences.keys())
         random.shuffle(all_ids)
         train_ids = all_ids[:int(split_ratio * len(all_ids))]
@@ -43,7 +42,7 @@ def split_dataset(sequences, train_output_file, test_output_file, split_ratio=0.
 
 def print_dataset_info(repbase_path, type):
     repbase_names, repbase_contigs = read_fasta_v1(repbase_path)
-    # 统计其中序列个数，物种数量
+    # Count the number of sequences and species within the dataset.
     unique_species = set()
 
     for name in repbase_names:
@@ -79,7 +78,7 @@ def main():
     repbase_train_path = out_dir + '/train.ref'
     repbase_test_path = out_dir + '/test.ref'
 
-    # 按照8:2划分训练集和测试集
+    # Divide the dataset into training and testing sets in an 80:20 ratio.
     repbase_names, repbase_contigs = read_fasta_v1(data_path)
     split_dataset(repbase_contigs, repbase_train_path, repbase_test_path, split_ratio=ratio)
     print_dataset_info(repbase_train_path, 'train')

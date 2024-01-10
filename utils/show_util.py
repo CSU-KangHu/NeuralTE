@@ -11,12 +11,19 @@ def showToolName():
     'version ' + str(config.version_num) + '\n\n'
     print(describe_image)
 
-def showTrainParams(data_path):
+def showTrainParams(params):
     print('\nParameters configuration\n'
         '====================================System settings========================================\n'
-        '  [Setting] Input data used to train model = [ ' + str(data_path) + ' ]\n'
-        '  [Setting] Whether to use LTR, TIR terminal features = [ ' + str(config.use_terminal) + ' ]\n'
+        '  [Setting] Input data used to train model = [ ' + str(params['data_path']) + ' ]\n'
+        '  [Setting] Output directory = [ ' + str(params['outdir']) + ' ]\n'
+        '  [Setting] Genome path = [ ' + str(params['genome']) + ' ]\n'
         '  [Setting] Whether to use TSD features = [ ' + str(config.use_TSD) + ' ]\n'
+        '  [Setting] Enable train mode = [ ' + str(config.is_train) + ' ]\n'
+        '  [Setting] Enable prediction mode = [ ' + str(config.is_predict) + ' ]\n' 
+        '  [Setting] Whether to retain the raw input sequence = [ ' + str(config.keep_raw) + ' ]\n'  
+        '  [Setting] Whether to use kmers features = [ ' + str(config.use_kmers) + ' ]\n'                                                                                                                                               
+        '  [Setting] Whether to use LTR, TIR terminal features = [ ' + str(config.use_terminal) + ' ]\n'
+        '  [Setting] Whether to use minority features = [ ' + str(config.use_minority) + ' ]\n'
         '  [Setting] Whether to use domain features = [ ' + str(config.use_domain) + ' ]\n'
         '  [Setting] Whether to use 5-bp terminal ends features = [ ' + str(config.use_ends) + ' ]\n'
         '  [Setting] Input thread num = [ ' + str(config.threads) + ' ]\n'
@@ -31,10 +38,25 @@ def showTrainParams(data_path):
         '  [Setting] Whether to use breakpoint training = [ ' + str(config.use_checkpoint) + ' ]'
     )
 
-def showTestParams(data_path, model_path):
+def showTestParams(params):
     print('\nParameters configuration\n'
           '====================================System settings========================================\n'
-          '  [Setting] Input data to be classified = [ ' + str(data_path) + ' ]\n'
-          '  [Setting] Input the path of trained model, absolute path = [ ' + str(model_path) + ' ]\n'
+          '  [Setting] Input data to be classified = [ ' + str(params['data_path']) + ' ]\n'
+          '  [Setting] Output directory = [ ' + str(params['outdir']) + ' ]\n'
+          '  [Setting] Genome path = [ ' + str(params['genome']) + ' ]\n'   
+          '  [Setting] species = [ ' + str(params['species']) + ' ]\n'                                                            
+          '  [Setting] Input the path of trained model, absolute path = [ ' + str(params['model_path']) + ' ]\n'
+          '  [Setting] Whether to use TSD features = [ ' + str(config.use_TSD) + ' ]\n'
+          '  [Setting] Enable prediction mode = [ ' + str(config.is_predict) + ' ]\n'                                                                                                 
+          '  [Setting] Whether to retain the raw input sequence = [ ' + str(config.keep_raw) + ' ]\n'  
+          '  [Setting] Whether to use kmers features = [ ' + str(config.use_kmers) + ' ]\n'                                                                                                                                               
+          '  [Setting] Whether to use LTR, TIR terminal features = [ ' + str(config.use_terminal) + ' ]\n'
+          '  [Setting] Whether to use minority features = [ ' + str(config.use_minority) + ' ]\n'
+          '  [Setting] Whether to use domain features = [ ' + str(config.use_domain) + ' ]\n'
+          '  [Setting] Whether to use 5-bp terminal ends features = [ ' + str(config.use_ends) + ' ]\n' 
+          '  [Setting] Use Wicker or RepeatMasker classification labels = [ ' + str(config.is_wicker) + ' ]\n' 
+          '  [Setting] Is the input genome of a plant = [ ' + str(config.is_plant) + ' ]\n'                                                                                              
           '  [Setting] Input thread num = [ ' + str(config.threads) + ' ]'
+          '  [Setting] The k-mer size used to convert internal sequences to k-mer frequency features = [ ' + str(config.internal_kmer_sizes) + ' ]\n'
+          '  [Setting] The k-mer size used to convert terminal sequences to k-mer frequency features = [ ' + str(config.terminal_kmer_sizes) + ' ]\n'
     )

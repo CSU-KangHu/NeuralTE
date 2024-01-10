@@ -5,8 +5,8 @@ import re
 import sys
 
 current_folder = os.path.dirname(os.path.abspath(__file__))
-# 添加 configs 文件夹的路径到 Python 路径
-configs_folder = os.path.join(current_folder, "..")  # 需要根据实际目录结构调整
+# Add the path to the 'configs' folder to the Python path
+configs_folder = os.path.join(current_folder, "..")
 sys.path.append(configs_folder)
 
 from configs import config
@@ -44,7 +44,7 @@ def identify_terminals(split_file, output_dir, tool_dir):
     ltr_file = split_file + '.ltr'
     tir_file = split_file + '.itr'
 
-    # 读取ltr和itr文件，获取ltr和itr开始和结束位置
+    # Read LTR and ITR files to obtain start and end positions of LTR and ITR
     ltr_names, ltr_contigs = read_fasta_v1(ltr_file)
     tir_names, tir_contigs = read_fasta_v1(tir_file)
     LTR_info = {}
@@ -72,7 +72,7 @@ def identify_terminals(split_file, output_dir, tool_dir):
         rTIR_end = int(TIR_right_pos_parts[0])
         TIR_info[orig_name] = (lTIR_start, lTIR_end, rTIR_start, rTIR_end)
 
-    # 更新split_file的header,添加两列 LTR:1-206,4552-4757  TIR:1-33,3869-3836
+    # Update split_file's header, adding two columns LTR:1-206,4552-4757 TIR:1-33,3869-3836
     update_split_file = split_file + '.updated'
     update_contigs = {}
     names, contigs = read_fasta_v1(split_file)
@@ -106,10 +106,10 @@ def connect_LTR(repbase_path):
         species_name = parts[2]
         repbase_labels[repbase_name] = (classification, species_name)
 
-    # 获取所有LTR序列
+    # Get all LTR sequences
     LTR_names = set()
     for name in raw_names:
-        # 识别LTR终端序列，并获得对应的内部序列名称
+        # Identify LTR terminal sequences and obtain corresponding internal sequence names
         pattern = r'\b(\w+(-|_)?)LTR((-|_)?\w*)\b'
         matches = re.findall(pattern, name)
         if matches:
@@ -121,13 +121,13 @@ def connect_LTR(repbase_path):
             LTR_names.add(internal_name1)
             LTR_names.add(internal_name2)
 
-    # 存储分段的LTR与完整LTR的对应关系
+    # Store segmented LTR and complete LTR associations
     SegLTR2intactLTR = {}
     new_names = []
     new_contigs = {}
     for name in raw_names:
         if name in LTR_names:
-            # 当前序列是LTR，判断内部序列是否存在
+            # If the current sequence is LTR, check for the existence of internal sequences
             pattern = r'\b(\w+(-|_)?)LTR((-|_)?\w*)\b'
             matches = re.findall(pattern, name)
             if matches:
@@ -157,11 +157,12 @@ def connect_LTR(repbase_path):
                         SegLTR2intactLTR[ltr_name] = intact_ltr_name
                         SegLTR2intactLTR[internal_name] = intact_ltr_name
         else:
-            # 如果当前序列是INT，直接丢弃，因为具有LTR的INT肯定会被识别出来，而没有LTR的INT应该被当做不完整的LTR丢弃
+            # If the current sequence is INT, discard it directly, as INTs with LTRs will surely be identified,
+            # while INTs without LTRs should be discarded as incomplete LTRs
             pattern = r'\b(\w+(-|_)?)INT((-|_)?\w*)\b'
             matches = re.findall(pattern, name)
             if not matches:
-                # 保留其余类型的转座子
+                # Retain other types of transposons
                 new_names.append(name)
                 new_contigs[name] = raw_contigs[name]
 
@@ -174,7 +175,7 @@ def connect_LTR(repbase_path):
         final_repbase_contigs[new_name] = new_contigs[query_name]
     store_fasta(final_repbase_contigs, repbase_path)
 
-    # 存储分段的LTR与完整LTR的对应关系
+    # Store segmented LTR and complete LTR associations
     SegLTR2intactLTRMap = config.work_dir + '/segLTR2intactLTR.map'
     with open(SegLTR2intactLTRMap, 'a+') as f_save:
         for name in SegLTR2intactLTR.keys():
@@ -191,19 +192,19 @@ def get_all_files(directory):
     return all_files
 
 def split_dataset(sequences, train_output_file, test_output_file, split_ratio=0.8):
-    # 随机划分训练集和测试集
+    # Randomly partition into training and test sets
     all_ids = list(sequences.keys())
     random.shuffle(all_ids)
     train_ids = all_ids[:int(split_ratio * len(all_ids))]
     test_ids = all_ids[int(split_ratio * len(all_ids)):]
 
-    # 写入训练集fasta文件
+    # Write to the training set fasta file
     with open(train_output_file, 'w') as f:
         for seq_id in train_ids:
             f.write('>' + seq_id + '\n')
             f.write(sequences[seq_id] + '\n')
 
-    # 写入测试集fasta文件
+    # Write to the test set fasta file
     with open(test_output_file, 'w') as f:
         for seq_id in test_ids:
             f.write('>' + seq_id + '\n')
@@ -212,7 +213,7 @@ def split_dataset(sequences, train_output_file, test_output_file, split_ratio=0.
 
 def print_dataset_info(repbase_path):
     repbase_names, repbase_contigs = read_fasta_v1(repbase_path)
-    # 统计其中序列个数，物种数量
+    # Count the number of sequences and species
     unique_species = set()
     for name in repbase_names:
         unique_species.add(name.split('\t')[2])
@@ -236,8 +237,8 @@ def main():
     out_dir = os.path.realpath(out_dir)
     repbase_path = out_dir + '/all_repbase.ref'
 
-    # 1.合并Repbase目录下的所有Repbase文件, 只保留header格式为seq_name\tlabel\tspecies_name的序列
-    # 2. 保留能够转换为 Wicker superfamily 标签的序列，其余的序列很难确定其 superfamily 类别
+    # 1. Merge all Repbase files under the Repbase directory, retaining only sequences with headers in the format seq_name\tlabel\tspecies_name
+    # 2. Retain sequences that can be converted to Wicker superfamily labels; it's difficult to determine the superfamily category for other sequences
     files = get_all_files(repbase_dir)
     all_repbase_contigs = {}
     for file in files:
@@ -247,7 +248,7 @@ def main():
             if len(parts) == 3 and config.Repbase_wicker_labels.__contains__(parts[1]):
                 all_repbase_contigs[name] = contigs[name]
     store_fasta(all_repbase_contigs, repbase_path)
-    # 3. 将repbase序列的LTR和Internal连接起来，过滤掉那些不完整的LTR序列
+    # 3. Concatenate Repbase sequences' LTRs and Internals, filtering out incomplete LTR sequences
     repbase_path, repbase_labels = connect_LTR(repbase_path)
     print_dataset_info(repbase_path)
 

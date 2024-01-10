@@ -3,8 +3,8 @@ import os
 import sys
 
 current_folder = os.path.dirname(os.path.abspath(__file__))
-# 添加 configs 文件夹的路径到 Python 路径
-configs_folder = os.path.join(current_folder, "..")  # 需要根据实际目录结构调整
+# Add the path to the 'configs' folder to the Python path
+configs_folder = os.path.join(current_folder, "..")
 sys.path.append(configs_folder)
 
 import numpy as np
@@ -27,7 +27,7 @@ class CrossValidator:
         precision_array = []
         recall_array = []
         f1_array = []
-        # 循环每个K折
+        # Loop through each K-fold
         for fold, (train_index, test_index) in enumerate(self.sss.split(X, y)):
             X_train, X_test = X[train_index], X[test_index]
             y_train, y_test = y[train_index], y[test_index]
@@ -39,13 +39,13 @@ class CrossValidator:
             cnn_model = CNN_Model(config.X_feature_len, config.class_num)
             model = cnn_model.build_model(config.cnn_num_convs, config.cnn_filters_array)
 
-            # 训练模型
+            # Train the model
             model.fit(X_train, y_train_one_hot, batch_size=config.batch_size, epochs=config.epochs, verbose=1)
-            # 保存模型
+            # Save the model
             model_path = config.project_dir + '/models/' + f'model_fold_{fold}.h5'
             model.save(model_path)
 
-            # 预测概率
+            # Predict probabilities
             y_pred = model.predict(X_test)
             accuracy, precision, recall, f1 = get_metrics(y_pred, y_test, None, None)
             print("Fold:", fold)
@@ -61,15 +61,15 @@ class CrossValidator:
         precisions = np.array(precision_array)
         recalls = np.array(recall_array)
         f1s = np.array(f1_array)
-        # 计算平均值和样本标准差
+        # Calculate mean and sample standard deviation
         accuracy_mean = round(np.mean(accuracies), 4)
-        accuracy_stdv = round(np.std(accuracies, ddof=1), 4)  # 使用 ddof=1 表示计算样本标准差
+        accuracy_stdv = round(np.std(accuracies, ddof=1), 4)  # Use ddof=1 to calculate sample standard deviation
         precision_mean = round(np.mean(precisions), 4)
-        precision_stdv = round(np.std(precisions, ddof=1), 4)  # 使用 ddof=1 表示计算样本标准差
+        precision_stdv = round(np.std(precisions, ddof=1), 4)
         recall_mean = round(np.mean(recalls), 4)
-        recall_stdv = round(np.std(recalls, ddof=1), 4)  # 使用 ddof=1 表示计算样本标准差
+        recall_stdv = round(np.std(recalls, ddof=1), 4)
         f1_mean = round(np.mean(f1s), 4)
-        f1_stdv = round(np.std(f1s, ddof=1), 4)  # 使用 ddof=1 表示计算样本标准差
+        f1_stdv = round(np.std(f1s, ddof=1), 4)
         return [accuracy_mean, precision_mean, recall_mean, f1_mean], [accuracy_stdv, precision_stdv, recall_stdv, f1_stdv]
 
 
@@ -121,17 +121,17 @@ def main():
     X_feature_len = get_feature_len()
     config.X_feature_len = X_feature_len
 
-    # 实例化 DataProcessor 类
+    # Instantiate the DataProcessor class
     data_processor = DataProcessor()
-    # 加载数据
-    # 请确保下面数据的header格式为Repbase格式，即'TE_name  Superfamily Species'，以'\t'分割
-    cv_train_data_path = data_path  # 交叉验证训练数据路径
+    # Load the data
+    # Make sure the header format for the following data is in Repbase format, i.e., 'TE_name  Superfamily Species', separated by '\t'
+    cv_train_data_path = data_path  # Path to cross-validation training data
     X, y, seq_names, data_path = data_processor.load_data(config.internal_kmer_sizes, config.terminal_kmer_sizes, cv_train_data_path)
     print(X.shape, y.shape)
 
-    # 实例化 CrossValidator 类
+    # Instantiate the CrossValidator class
     validator = CrossValidator(num_folds=5)
-    # 进行交叉验证
+    # Perform cross-validation
     means, stdvs = validator.evaluate(X, y)
     print('accuracy, precision, recall, f1:')
     print("Mean array:", means)

@@ -1,18 +1,10 @@
 import os
 import atexit
-from keras.models import Sequential, load_model, Model
-from keras.layers import Layer, Input, Dense, Dropout, Activation, Flatten, LSTM, Conv1D, Conv2D,\
-    MaxPooling1D, MaxPooling2D, Bidirectional, Embedding, GlobalAveragePooling1D, concatenate, \
-    MultiHeadAttention, LayerNormalization
-import numpy as np
+from keras.models import load_model, Model
+from keras.layers import Input, Dense, Dropout, Flatten, Conv1D
 from configs import config
 from configs import gpu_config
-import tensorflow as tf
 
-import keras
-from keras.losses import Loss
-import keras.backend as K
-import tensorflow as tf
 
 import keras.backend as K
 import tensorflow as tf
@@ -109,7 +101,7 @@ class CNN_Model:
         return self.model.predict(X)
 
     def build_model(self, cnn_num_convs, cnn_filters_array):
-        # 构建模型
+        # construct model
         if config.use_checkpoint == 0:
             os.system('cd ' + gpu_config.checkpoint_dir + ' && rm -rf ckpt*')
         # Create a MirroredStrategy.
@@ -126,27 +118,27 @@ class CNN_Model:
             print("Creating a new model")
 
             # CNN model
-            # 输入层
+            # input layer
             input_layer = Input(shape=(self.num_features, 1))
             conv_input_layer = input_layer
-            # 创建多个卷积层
+            # Create multiple convolutional layers
             for i in range(cnn_num_convs):
-                # 添加卷积层
+                # Add convolutional layers
                 conv = Conv1D(cnn_filters_array[i], config.cnn_kernel_sizes_array[i], activation='relu')(conv_input_layer)
                 conv_input_layer = conv
             dropout1 = Dropout(0.5)(conv_input_layer)
-            # 添加展平层和全连接层
+            # Add flattening and fully connected layers
             flatten = Flatten()(dropout1)
             dense1 = Dense(128, activation='relu')(flatten)
             dropout2 = Dropout(config.cnn_dropout)(dense1)
-            # 输出层
+            # Output layer
             output_layer = Dense(int(config.class_num), activation='softmax')(dropout2)
-            # 构建模型
+            # Build the model
             model = Model(inputs=input_layer, outputs=output_layer)
-            # 编译模型
+            # Compile the model
             model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
             #model.compile(loss=[categorical_focal_loss(alpha=0.25, gamma=2)], optimizer='adam', metrics=['accuracy'])
-            # 打印模型摘要
+            # Print model summary
             #model.summary()
         atexit.register(strategy._extended._collective_ops._pool.close)  # type: ignore
         return model

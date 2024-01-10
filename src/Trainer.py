@@ -6,17 +6,15 @@ import sys
 import time
 
 current_folder = os.path.dirname(os.path.abspath(__file__))
-# 添加 configs 文件夹的路径到 Python 路径
-configs_folder = os.path.join(current_folder, "..")  # 需要根据实际目录结构调整
+# Add the path to the 'configs' folder to the Python path
+configs_folder = os.path.join(current_folder, "..")
 sys.path.append(configs_folder)
 
 import numpy as np
-from keras.models import load_model
 from keras.utils import np_utils
 from configs import config
 from CNN_Model import CNN_Model
 from DataProcessor import DataProcessor
-from utils.evaluate_util import get_metrics
 from utils.show_util import showToolName, showTrainParams
 from utils.data_util import get_feature_len
 import datetime
@@ -34,9 +32,9 @@ class Trainer:
         cnn_model = CNN_Model(config.X_feature_len, config.class_num)
         model = cnn_model.build_model(cnn_num_convs, cnn_filters_array)
 
-        # 训练模型
+        # model training
         model.fit(X, y_one_hot, batch_size=config.batch_size, epochs=config.epochs, verbose=1)
-        # 保存模型
+        # save model
         i = datetime.datetime.now()
         time_str = str(i.date()) + '.' + str(i.hour) + '-' + str(i.minute) + '-' + str(i.second)
         model_path = config.project_dir + '/models/' + f'model_' + time_str + '.h5'
@@ -50,17 +48,19 @@ def main():
     # 1.parse args
     describe_info = '########################## NeuralTE, version ' + str(config.version_num) + ' ##########################'
     parser = argparse.ArgumentParser(description=describe_info)
-    parser.add_argument('--data', metavar='data', help='Input fasta file used to train model, header format: seq_name\tlabel\tspecies_name, refer to "data/train.example.fa" for example.')
-    parser.add_argument('--outdir', metavar='output_dir', help='Output directory, store temporary files')
+    parser.add_argument('--data', required=True, metavar='data', help='Input fasta file used to train model, header format: seq_name\tlabel\tspecies_name, refer to "data/train.example.fa" for example.')
+    parser.add_argument('--outdir', required=True, metavar='output_dir', help='Output directory, store temporary files')
+    parser.add_argument('--use_TSD', required=True, metavar='use_TSD', help='Whether to use TSD features, 1: true, 0: false. default = [ ' + str(config.use_TSD) + ' ]')
+    parser.add_argument('--is_train', required=True, metavar='is_train', help='Enable train mode, 1: true, 0: false. default = [ ' + str(config.is_train) + ' ]')
+    parser.add_argument('--is_predict', required=True, metavar='is_predict', help='Enable prediction mode, 1: true, 0: false. default = [ ' + str(config.is_predict) + ' ]')
+
+    parser.add_argument('--keep_raw', metavar='keep_raw', help='Whether to retain the raw input sequence, 1: true, 0: false; only save species having TSDs. default = [ ' + str(config.keep_raw) + ' ]')
     parser.add_argument('--genome', metavar='genome', help='Genome path, use to search for TSDs')
     parser.add_argument('--use_kmers', metavar='use_kmers', help='Whether to use kmers features, 1: true, 0: false. default = [ ' + str(config.use_kmers) + ' ]')
     parser.add_argument('--use_terminal', metavar='use_terminal', help='Whether to use LTR, TIR terminal features, 1: true, 0: false. default = [ ' + str(config.use_terminal) + ' ]')
-    parser.add_argument('--use_TSD', metavar='use_TSD', help='Whether to use TSD features, 1: true, 0: false. default = [ ' + str(config.use_TSD) + ' ]')
     parser.add_argument('--use_minority', metavar='use_minority', help='Whether to use minority features, 1: true, 0: false. default = [ ' + str(config.use_minority) + ' ]')
     parser.add_argument('--use_domain', metavar='use_domain', help='Whether to use domain features, 1: true, 0: false. default = [ ' + str(config.use_domain) + ' ]')
     parser.add_argument('--use_ends', metavar='use_ends', help='Whether to use 5-bp terminal ends features, 1: true, 0: false. default = [ ' + str(config.use_ends) + ' ]')
-    parser.add_argument('--is_train', metavar='is_train', help='Enable train mode, 1: true, 0: false. default = [ ' + str(config.is_train) + ' ]')
-    parser.add_argument('--is_predict', metavar='is_predict', help='Enable prediction mode, 1: true, 0: false. default = [ ' + str(config.is_predict) + ' ]')
     parser.add_argument('--threads', metavar='thread_num', help='Input thread num, default = [ ' + str(config.threads) + ' ]')
     parser.add_argument('--internal_kmer_sizes', metavar='internal_kmer_sizes', help='The k-mer size used to convert internal sequences to k-mer frequency features, default = [ ' + str(config.internal_kmer_sizes) + ' MB ]')
     parser.add_argument('--terminal_kmer_sizes', metavar='terminal_kmer_sizes', help='The k-mer size used to convert terminal sequences to k-mer frequency features, default = [ ' + str(config.terminal_kmer_sizes) + ' ]')
@@ -85,6 +85,7 @@ def main():
     use_domain = args.use_domain
     use_ends = args.use_ends
     is_train = args.is_train
+    keep_raw = args.keep_raw
     is_predict = args.is_predict
     threads = args.threads
     internal_kmer_sizes = args.internal_kmer_sizes
@@ -113,6 +114,8 @@ def main():
         config.use_ends = int(use_ends)
     if is_train is not None:
         config.is_train = int(is_train)
+    if keep_raw is not None:
+        config.keep_raw = int(keep_raw)
     if is_predict is not None:
         config.is_predict = int(is_predict)
     if threads is not None:
@@ -146,15 +149,19 @@ def main():
                 f_save.write('#Scientific Name\tGenome Path\tIs Plant\n')
                 f_save.write('Unknown\t'+genome+'\t'+str(config.is_plant)+'\n')
 
-    showTrainParams(data_path)
+    params = {}
+    params['data_path'] = data_path
+    params['outdir'] = outdir
+    params['genome'] = genome
+    showTrainParams(params)
 
     X_feature_len = get_feature_len()
     config.X_feature_len = X_feature_len
 
     starttime1 = time.time()
-    # 实例化 DataProcessor 类
+    # Instantiate the DataProcessor class
     data_processor = DataProcessor()
-    # 加载数据
+    # load data
     X, y, seq_names, data_path = data_processor.load_data(config.internal_kmer_sizes, config.terminal_kmer_sizes, data_path)
     print(X.shape, y.shape)
     endtime1 = time.time()
@@ -162,9 +169,9 @@ def main():
     print("Running time of DataProcessor: %.8s s" % (dtime1))
 
     starttime2 = time.time()
-    # 实例化 Trainer 类
+    # Instantiate the Trainer class
     trainer = Trainer()
-    # 进行训练
+    # start training
     model_path = trainer.train(X, y, config.cnn_num_convs, config.cnn_filters_array)
     print('Trained model is stored in:', model_path)
     endtime2 = time.time()

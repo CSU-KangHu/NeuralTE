@@ -2,8 +2,8 @@ import os
 import sys
 
 current_folder = os.path.dirname(os.path.abspath(__file__))
-# 添加 configs 文件夹的路径到 Python 路径
-configs_folder = os.path.join(current_folder, "..")  # 需要根据实际目录结构调整
+# Add the path to the 'configs' folder to the Python path
+configs_folder = os.path.join(current_folder, "..")
 sys.path.append(configs_folder)
 
 import argparse

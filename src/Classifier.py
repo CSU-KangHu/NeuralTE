@@ -6,16 +6,13 @@ import sys
 import time
 
 current_folder = os.path.dirname(os.path.abspath(__file__))
-# 添加 configs 文件夹的路径到 Python 路径
-configs_folder = os.path.join(current_folder, "..")  # 需要根据实际目录结构调整
+# Add the path to the 'configs' folder to the Python path
+configs_folder = os.path.join(current_folder, "..")
 sys.path.append(configs_folder)
 
 from utils.show_util import showToolName, showTestParams
-import numpy as np
 from keras.models import load_model
-from keras.utils import np_utils
 from configs import config
-from configs import gpu_config
 from DataProcessor import DataProcessor
 from utils.evaluate_util import get_metrics, correct_using_minority
 from utils.data_util import get_feature_len
@@ -35,26 +32,26 @@ class Classifier:
         return accuracy, precision, recall, f1
 
 
-
-
 def main():
     showToolName()
 
     # 1.parse args
     describe_info = '########################## NeuralTE, version ' + str(config.version_num) + ' ##########################'
     parser = argparse.ArgumentParser(description=describe_info)
-    parser.add_argument('--data', metavar='data', help='Input fasta file used to predict, header format: seq_name\tlabel\tspecies_name, refer to "data/test.example.fa" for example.')
-    parser.add_argument('--outdir', metavar='output_dir', help='Output directory, store temporary files')
+    parser.add_argument('--data', required=True, metavar='data', help='Input fasta file used to predict, header format: seq_name\tlabel\tspecies_name, refer to "data/test.example.fa" for example.')
+    parser.add_argument('--outdir', required=True, metavar='output_dir', help='Output directory, store temporary files')
+    parser.add_argument('--use_TSD', required=True, metavar='use_TSD', help='Whether to use TSD features, 1: true, 0: false. default = [ ' + str(config.use_TSD) + ' ]')
+    parser.add_argument('--is_predict', required=True, metavar='is_predict', help='Enable prediction mode, 1: true, 0: false. default = [ ' + str(config.is_predict) + ' ]')
+
+    parser.add_argument('--keep_raw', metavar='keep_raw', help='Whether to retain the raw input sequence, 1: true, 0: false; only save species having TSDs. default = [ ' + str(config.keep_raw) + ' ]')
     parser.add_argument('--genome', metavar='genome', help='Genome path, use to search for TSDs')
-    parser.add_argument('--species', metavar='species', help='评估NeuralTE使用的物种')
+    parser.add_argument('--species', metavar='species', help='Which species does the TE library to be classified come from?')
     parser.add_argument('--model_path', metavar='model_path', help='Input the path of trained model, absolute path.')
     parser.add_argument('--use_kmers', metavar='use_kmers', help='Whether to use kmers features, 1: true, 0: false. default = [ ' + str(config.use_kmers) + ' ]')
     parser.add_argument('--use_terminal', metavar='use_terminal', help='Whether to use LTR, TIR terminal features, 1: true, 0: false. default = [ ' + str(config.use_terminal) + ' ]')
-    parser.add_argument('--use_TSD', metavar='use_TSD', help='Whether to use TSD features, 1: true, 0: false. default = [ ' + str(config.use_TSD) + ' ]')
     parser.add_argument('--use_minority', metavar='use_minority', help='Whether to use minority features, 1: true, 0: false. default = [ ' + str(config.use_minority) + ' ]')
     parser.add_argument('--use_domain', metavar='use_domain', help='Whether to use domain features, 1: true, 0: false. default = [ ' + str(config.use_domain) + ' ]')
     parser.add_argument('--use_ends', metavar='use_ends', help='Whether to use 5-bp terminal ends features, 1: true, 0: false. default = [ ' + str(config.use_ends) + ' ]')
-    parser.add_argument('--is_predict', metavar='is_predict', help='Enable prediction mode, 1: true, 0: false. default = [ ' + str(config.is_predict) + ' ]')
     parser.add_argument('--is_wicker', metavar='is_wicker', help='Use Wicker or RepeatMasker classification labels, 1: Wicker, 0: RepeatMasker. default = [ ' + str(config.is_wicker) + ' ]')
     parser.add_argument('--is_plant', metavar='is_plant', help='Is the input genome of a plant? 0 represents non-plant, while 1 represents plant. default = [ ' + str(config.is_plant) + ' ]')
     parser.add_argument('--threads', metavar='thread_num', help='Input thread num, default = [ ' + str(config.threads) + ' ]')
@@ -76,6 +73,7 @@ def main():
     use_domain = args.use_domain
     use_ends = args.use_ends
     is_predict = args.is_predict
+    keep_raw = args.keep_raw
     is_wicker = args.is_wicker
     threads = args.threads
     internal_kmer_sizes = args.internal_kmer_sizes
@@ -97,6 +95,8 @@ def main():
         config.use_ends = int(use_ends)
     if is_predict is not None:
         config.is_predict = int(is_predict)
+    if keep_raw is not None:
+        config.keep_raw = int(keep_raw)
     if is_wicker is not None:
         config.is_wicker = int(is_wicker)
     if is_plant is not None:
@@ -120,15 +120,21 @@ def main():
                 f_save.write('#Scientific Name\tGenome Path\tIs Plant\n')
                 f_save.write(species+'\t'+genome+'\t'+str(config.is_plant)+'\n')
 
-    showTestParams(data_path, model_path)
+    params = {}
+    params['data_path'] = data_path
+    params['outdir'] = outdir
+    params['model_path'] = model_path
+    params['genome'] = genome
+    params['species'] = species
+    showTestParams(params)
 
     X_feature_len = get_feature_len()
     config.X_feature_len = X_feature_len
 
     starttime1 = time.time()
-    # 实例化 DataProcessor 类
+    # Instantiate the DataProcessor class
     data_processor = DataProcessor()
-    # 加载数据
+    # load data
     X, y, seq_names, data_path = data_processor.load_data(config.internal_kmer_sizes, config.terminal_kmer_sizes, data_path)
     print(X.shape, y.shape)
     endtime1 = time.time()
@@ -136,20 +142,22 @@ def main():
     print("Running time of DataProcessor: %.8s s" % (dtime1))
 
     starttime2 = time.time()
-    # 实例化 Classifier 类
+    # Instantiate the Classifier class
     classifier = Classifier(model_path=model_path)
-    # 进行预测
+    # start prediction
     accuracy, precision, recall, f1 = classifier.predict(X, y, seq_names, data_path)
     endtime2 = time.time()
     dtime2 = endtime2 - starttime2
     print("Running time of model Classifier: %.8s s" % (dtime2))
 
-    starttime3 = time.time()
-    correct_using_minority(data_path, threads)
-    endtime3 = time.time()
-    dtime3 = endtime3 - starttime3
-    print("Running time of model Classifier: %.8s s" % (dtime3))
+    if config.use_minority:
+        starttime3 = time.time()
+        correct_using_minority(data_path, threads)
+        endtime3 = time.time()
+        dtime3 = endtime3 - starttime3
+        print("Running time of model Classifier: %.8s s" % (dtime3))
 
+    endtime3 = time.time()
     dtime = endtime3 - starttime1
     print("Running time of total NeuralTE-Classifier: %.8s s" % (dtime))
 

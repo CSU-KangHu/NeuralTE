@@ -1,22 +1,18 @@
 #-- coding: UTF-8 --
-import codecs
-import json
 import os
 import random
 import re
 import subprocess
-import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import pandas as pd
 from openpyxl.utils import get_column_letter
 from pandas import ExcelWriter
 import numpy as np
 import itertools
-
-# 统计repbase文件中，每个类别占比
 from configs import config
 
 
+# Calculate the proportion of each category in the repbase file.
 def summary_class_ratio(repbase_path):
     train_names, train_contigs = read_fasta_v1(repbase_path)
     train_class_num = {}
@@ -45,7 +41,7 @@ def summary_class_ratio(repbase_path):
     print(len(species_set))
     return train_class_num, class_set
 
-# 将repbase数据划分为plant和non_plant
+# Divide the repbase data into plant and non-plant categories.
 def split_repbase_by_plant(repbase_path, repbase_plant_path, repbase_non_plant_path, ncbi_ref_info):
     species_info = {}
     with open(ncbi_ref_info, 'r') as f_r:
@@ -75,9 +71,9 @@ def split_repbase_by_plant(repbase_path, repbase_plant_path, repbase_non_plant_p
     store_fasta(non_plant_contigs, repbase_non_plant_path)
 
 def parse_embl(embl_filename):
-    sequences = {}  # 用于存储序列信息的字典
+    sequences = {}
     current_sequence = None
-    sequence_section = False  # 用于判断是否在序列部分
+    sequence_section = False
     annotation_section = False
     with open(embl_filename, "r") as embl_file:
         for line in embl_file:
@@ -118,12 +114,12 @@ def parse_embl(embl_filename):
                 elif sequence_section and line.startswith("//"):
                     sequence_section = False
                 elif sequence_section and line:
-                    sequence_line = "".join(line.split(" ")[:-1])  # 仅保留碱基部分，忽略其他内容
+                    sequence_line = "".join(line.split(" ")[:-1])
                     sequences[current_sequence] += sequence_line
 
     return sequences
 
-# 从Dfam的embl文件提取fasta文件
+# Extract fasta files from the Dfam embl file.
 def extract_fasta_from_embl(dfam_embl, output_fasta):
     sequence_dict = parse_embl(dfam_embl)
     store_fasta(sequence_dict, output_fasta)
@@ -133,32 +129,34 @@ def generate_random_sequence(length):
     sequence = ''.join(random.choice(bases) for _ in range(length))
     return sequence
 
-# 随机生成碱基序列函数
+# Function to randomly generate nucleotide sequences.
 def generate_random_sequences(num_sequences):
-    # 生成序列数据
     sequence_lengths = []
 
-    # 生成长度范围为0-600的序列
+    # Generate sequences ranging from 0 to 600 in length.
     num_sequences_range1 = num_sequences // 4
     sequence_lengths.extend(random.randint(0, 600) for _ in range(num_sequences_range1))
 
-    # 生成长度范围为601-1800的序列
+    # Generate sequences ranging from 601 to 1800 in length.
     num_sequences_range2 = num_sequences // 4
     sequence_lengths.extend(random.randint(601, 1800) for _ in range(num_sequences_range2))
 
-    # 生成长度范围为1801-4000的序列
+    # Generate sequences ranging from 1801 to 4000 in length.
     num_sequences_range3 = num_sequences // 4
     sequence_lengths.extend(random.randint(1801, 4000) for _ in range(num_sequences_range3))
 
-    # 生成长度范围为4000-20000的序列
+    # Generate sequences ranging from 4000 to 20000 in length.
     num_sequences_range4 = num_sequences // 4
     sequence_lengths.extend(random.randint(4000, 20000) for _ in range(num_sequences_range4))
 
     return sequence_lengths
 
 def merge_tsd_terminal_repbase(tsd_repbase, terminal_repbase, merge_repbase, total_domain, merge_domain):
-    # 本函数的目的是: 通常获取tsd和获取terminal是两个分开的行为，因此会得到两个独立的repbase文件。
-    # 我们想以tsd序列的terminal信息，即根据seq_name，去terminal文件中获取terminal信息，如果不存在terminal信息，则设置空的terminal信息。
+    # The purpose of this function: Usually obtaining TSD (Target Site Duplication) and
+    # terminal sequences are two separate actions, resulting in two separate repbase files.
+    # We aim to retrieve terminal information based on the TSD sequence, specifically by
+    # using seq_name, from the terminal file. If terminal information is absent, it will be
+    # left empty.
     tsd_names, tsd_contigs = read_fasta_v1(tsd_repbase)
     term_names, term_contigs = read_fasta_v1(terminal_repbase)
     term_name_set = set()
@@ -184,7 +182,7 @@ def merge_tsd_terminal_repbase(tsd_repbase, terminal_repbase, merge_repbase, tot
         merge_contigs[common_name] = tsd_contigs[tsd_name]
     store_fasta(merge_contigs, merge_repbase)
 
-    # 从总体的domain文件中提取domain信息
+    # Extract domain information from the overall domain file.
     domain_header = ''
     merge_domain_lines = []
     with open(total_domain, 'r') as f_r:
@@ -233,12 +231,12 @@ def generate_mat(words_list,kmer_dic):
     return (num_list)
 
 def get_batch_kmer_freq_v1(grouped_x, internal_kmer_sizes, terminal_kmer_sizes, minority_labels_class, all_wicker_class):
-    # 构建碱基序列词汇表和反向词汇表
+    # Build vocabulary and reverse vocabulary for nucleotide sequences.
     base_vocab = {'A': 1, 'T': 2, 'C': 3, 'G': 4}
 
     group_dict = {}
     for x in grouped_x:
-        # 将序列拆分成internal_Seq, LTR, TIR三块组成
+        # Split sequences into internal_Seq, LTR, and TIR segments.
         seq_name = x[0]
         seq = x[1]
         TSD_seq = x[2]
@@ -250,7 +248,6 @@ def get_batch_kmer_freq_v1(grouped_x, internal_kmer_sizes, terminal_kmer_sizes, 
         # LTR_pos = x[2]
         # TIR_pos = x[3]
         # domain_label_set = x[4]
-        # 获取LTR序列，以及内部序列。如果同时存在LTR和TIR，取LTR的内部序列（因为LTR相对更长，更可靠）
         internal_seq = ''
         LTR_seq = ''
         TIR_seq = ''
@@ -267,7 +264,7 @@ def get_batch_kmer_freq_v1(grouped_x, internal_kmer_sizes, terminal_kmer_sizes, 
             TIR_seq = seq[left_TIR_start-1: left_TIR_end]
             internal_seq = seq[left_TIR_end: right_TIR_start-1]
 
-            # 尝试只取前60 bp的TIR 序列
+            # Attempt to extract only the first 60 bp of the TIR sequence.
             TIR_seq = TIR_seq[0: 60]
         if LTR_pos_str != '':
             LTR_parts = LTR_pos_str.split(',')
@@ -278,18 +275,18 @@ def get_batch_kmer_freq_v1(grouped_x, internal_kmer_sizes, terminal_kmer_sizes, 
             LTR_seq = seq[left_LTR_start-1: left_LTR_end]
             internal_seq = seq[left_LTR_end: right_LTR_start-1]
 
-        # 将internal_seq，LTR表示成kmer频次和位置信息
+        # Represent internal_seq and LTR as k-mer frequencies and positional information.
         connected_num_list = []
         if config.use_kmers:
             for kmer_size in internal_kmer_sizes:
                 if config.use_terminal:
-                    # 将internal_seq表示成kmer频次
+                    # Represent internal_seq as k-mer frequencies.
                     words_list = word_seq(internal_seq, kmer_size, stride=1)
                     kmer_dic = generate_kmer_dic(kmer_size)
                     num_list = generate_mat(words_list, kmer_dic)
                     connected_num_list += num_list
                 else:
-                    # 将seq表示成kmer频次
+                    # Represent seq as k-mer frequencies.
                     words_list = word_seq(seq, kmer_size, stride=1)
                     kmer_dic = generate_kmer_dic(kmer_size)
                     num_list = generate_mat(words_list, kmer_dic)
@@ -297,7 +294,7 @@ def get_batch_kmer_freq_v1(grouped_x, internal_kmer_sizes, terminal_kmer_sizes, 
 
             for kmer_size in terminal_kmer_sizes:
                 if config.use_terminal:
-                    # 将LTR，TIR表示成kmer频次
+                    # Represent LTR and TIR as k-mer frequencies.
                     words_list = word_seq(LTR_seq, kmer_size, stride=1)
                     kmer_dic = generate_kmer_dic(kmer_size)
                     num_list = generate_mat(words_list, kmer_dic)
@@ -308,22 +305,8 @@ def get_batch_kmer_freq_v1(grouped_x, internal_kmer_sizes, terminal_kmer_sizes, 
                     num_list = generate_mat(words_list, kmer_dic)
                     connected_num_list += num_list
 
-        # # 将TIR碱基序列转换为数字表示
-        # max_seq_length = 60
-        # sequences_encoded = []
-        # for i, base in enumerate(TIR_seq):
-        #     base_num = base_vocab[base]
-        #     sequences_encoded.append(base_num)
-        #     if len(sequences_encoded) >= max_seq_length:
-        #         break
-        # # 将序列填充到相同长度
-        # padding_length = max_seq_length - len(TIR_seq)
-        # if padding_length > 0:
-        #     for i in range(padding_length):
-        #         sequences_encoded.append(0)
-
         if config.use_TSD:
-            # 将TSD转成one-hot编码
+            # Convert TSD into one-hot encoding.
             encoder = np.eye(4, dtype=np.int8)
             max_length = config.max_tsd_length
             encoded_TSD = np.zeros((max_length, 4), dtype=np.int8)
@@ -353,9 +336,9 @@ def get_batch_kmer_freq_v1(grouped_x, internal_kmer_sizes, terminal_kmer_sizes, 
             connected_num_list = np.concatenate((connected_num_list, onehot_encoded_flat))
 
         if config.use_ends:
-            # 取序列的首尾各5bp，形成一个10bp的向量
+            # Take the first and last 5 bp of a sequence to form a 10bp vector.
             end_seq = seq[:5] + seq[-5:]
-            # 将end_seq转成one-hot编码
+            # Convert end_seq into one-hot encoding.
             encoder = np.eye(4, dtype=np.int8)
             max_length = 10
             encoded_end_seq = np.zeros((max_length, 4), dtype=np.int8)
@@ -371,41 +354,21 @@ def get_batch_kmer_freq_v1(grouped_x, internal_kmer_sizes, terminal_kmer_sizes, 
             onehot_encoded_flat = encoded_end_seq.reshape(-1)
             connected_num_list = np.concatenate((connected_num_list, onehot_encoded_flat))
 
-        # # 将TSD碱基序列转换为数字表示
-        # if TSD_seq == 'unknown' or 'N' in TSD_seq:
-        #     TSD_seq = ''
-        # sequences_encoded = [base_vocab[base] for base in TSD_seq]
-        # # 将序列填充到相同长度
-        # max_seq_length = 11
-        # padding_length = max_seq_length - len(TSD_seq)
-        # for i in range(padding_length):
-        #     sequences_encoded.append(0)
-
         if config.use_domain:
-            # 将domain set转成one-hot编码
+            # Convert domain set into one-hot encoding.
             encoder = [0] * len(all_wicker_class)
             for domain_label in domain_label_set:
                 domain_label_num = all_wicker_class[domain_label]
                 encoder[domain_label_num] = 1
             connected_num_list = np.concatenate((connected_num_list, encoder))
 
-        # if config.use_minority:
-        #     # 将minority set转成one-hot编码
-        #     encoder = [0] * len(minority_labels_class)
-        #     print(minority_label_set)
-        #     for minority_label in minority_label_set:
-        #         minority_label_num = minority_labels_class[minority_label]
-        #         encoder[minority_label_num] = 1
-        #     connected_num_list = np.concatenate((connected_num_list, encoder))
-
-        #group_dict[seq_name] = (connected_num_list, sequences_encoded)
         group_dict[seq_name] = connected_num_list
     return group_dict
 
 def get_feature_len():
-    # 获取CNN输入维度
+    # Obtain CNN input dimensions
     X_feature_len = 0
-    # TE seq/internal_seq 维度
+    # Dimensions of TE terminal and internal sequences
     if config.use_kmers != 0:
         for kmer_size in config.internal_kmer_sizes:
             X_feature_len += pow(4, kmer_size)
@@ -455,8 +418,8 @@ def replace_non_atcg(sequence):
     return re.sub("[^ATCG]", "", sequence)
 
 def getRMToWicker(RM_Wicker_struct):
-    # 3.2 将Dfam分类名称转成wicker格式
-    ## 3.2.1 这个文件里包含了RepeatMasker类别、Repbase、wicker类别的转换
+    # 3.2 Convert Dfam classification names into Wicker format.
+    ## 3.2.1 This file contains the conversion between RepeatMasker category, Repbase, and Wicker category.
     rmToWicker = {}
     wicker_superfamily_set = set()
     with open(RM_Wicker_struct, 'r') as f_r:
@@ -480,12 +443,48 @@ def getRMToWicker(RM_Wicker_struct):
                 wicker_superfamily = 'Retrovirus'
             rmToWicker[rm_full_type] = wicker_superfamily
             wicker_superfamily_set.add(wicker_superfamily)
-    # 补充一些元素
+    # Supplement some elements.
     rmToWicker['LINE/R2'] = 'R2'
     rmToWicker['LINE/RTE'] = 'RTE'
     rmToWicker['LTR/ERVL'] = 'Retrovirus'
     rmToWicker['LTR/Ngaro'] = 'DIRS'
     return rmToWicker
+
+def transfer_RMOut2Bed(RMOut, out_bed, consensus_path, tools_dir, coverage_threshold, name_label_dict):
+    cons_names, cons_contigs = read_fasta(consensus_path)
+    cons_len = {}
+    for name in cons_names:
+        new_name = name.split('#')[0]
+        cons_len[new_name] = len(cons_contigs[name])
+    # 1. Convert the .out file to a .bed file.
+    convert2bed_command = 'perl ' + tools_dir + '/RMout_to_bed.pl ' + RMOut + ' base1'
+    print(convert2bed_command)
+    os.system(convert2bed_command)
+    bed_file = RMOut + '.bed'
+    lines = []
+    with open(bed_file, 'r') as f_r:
+        for line in f_r:
+            parts = line.split('\t')
+            query_name = 'Chr'+parts[0]
+            q_start = parts[1]
+            q_end = parts[2]
+            subject_info = parts[3]
+            subject_pats = subject_info.split(';')
+            direction = subject_pats[8]
+            subject_name = subject_pats[9]
+            if direction == '+':
+                s_start = subject_pats[11]
+                s_end = subject_pats[12]
+            else:
+                s_start = subject_pats[12]
+                s_end = subject_pats[13]
+            # Retrieve the full-length copy.
+            if float(abs(int(s_end)-int(s_start)))/cons_len[subject_name] >= coverage_threshold:
+                new_line = query_name+'\t'+q_start+'\t'+q_end+'\t'+name_label_dict[subject_name]+'\n'
+                lines.append(new_line)
+    with open(out_bed, 'w') as f_save:
+        for line in lines:
+            f_save.write(line)
 
 def transfer_RMOut2BlastnOut(RMOut, BlastnOut, tools_dir):
     # 1. Convert the .out file to a .bed file.
@@ -520,7 +519,7 @@ def load_repbase_with_TSD(path, domain_path, minority_train_path, minority_out, 
     rmToWicker = getRMToWicker(RM_Wicker_struct)
     domain_name_labels = {}
     if config.use_domain == 1 and os.path.exists(domain_path):
-        # 加载domain文件，读取TE包含的domain标签
+        # Load the domain file and read the TE-contained domain labels.
         with open(domain_path, 'r') as f_r:
             for i, line in enumerate(f_r):
                 if i < 2:
@@ -539,28 +538,6 @@ def load_repbase_with_TSD(path, domain_path, minority_train_path, minority_out, 
                     domain_name_labels[TE_name] = set()
                 label_set = domain_name_labels[TE_name]
                 label_set.add(label)
-
-    # # 读取minority数据集的TE_name与标签的对应关系
-    # minority_label_dict = {}
-    # contigNames, contigs = read_fasta_v1(minority_train_path)
-    # for name in contigNames:
-    #     parts = name.split('\t')
-    #     TE_name = parts[0]
-    #     label = parts[1]
-    #     minority_label_dict[TE_name] = label
-    #
-    # minority_name_labels = {}
-    # if config.use_minority == 1 and os.path.exists(minority_out):
-    #     # 加载minority文件，读取TE对应的minority标签
-    #     with open(minority_out, 'r') as f_r:
-    #         for i, line in enumerate(f_r):
-    #             parts = line.split('\t')
-    #             TE_name = parts[0]
-    #             label = minority_label_dict[parts[1]]
-    #             if not minority_name_labels.__contains__(TE_name):
-    #                 minority_name_labels[TE_name] = set()
-    #                 label_set = minority_name_labels[TE_name]
-    #                 label_set.add(label)
 
     names, contigs = read_fasta_v1(path)
     X = []
@@ -611,20 +588,12 @@ def load_repbase_with_TSD(path, domain_path, minority_train_path, minority_out, 
             domain_label_set = domain_name_labels[raw_seq_name]
         else:
             domain_label_set = {'Unknown'}
-        # if minority_name_labels.__contains__(raw_seq_name):
-        #     minority_label_set = minority_name_labels[raw_seq_name]
-        # else:
-        #     minority_label_set = {'Unknown'}
 
         seq = contigs[name]
         seq = replace_non_atcg(seq)  # undetermined nucleotides in splice
         x_feature = (seq_name, seq, TSD_seq, TSD_len, LTR_info, TIR_info, domain_label_set)
-        #x_feature = (seq_name, seq, TSD_seq, TSD_len, LTR_info, TIR_info, domain_label_set, minority_label_set)
-        #x_feature = (seq_name, seq, LTR_info, TIR_info, domain_label_set)
         X.append(x_feature)
         Y[seq_name] = label
-        # y_feature = (seq_name, label)
-        # Y.append(y_feature)
         seq_names.append((seq_name, label))
     return X, Y, seq_names
 
@@ -696,7 +665,7 @@ def identify_terminals(split_file, output_dir, tool_dir):
         ltr_file = split_file + '.ltr'
         tir_file = split_file + '.itr'
 
-        # 读取ltr和itr文件，获取ltr和itr开始和结束位置
+        # Read ltr and itr files to get the start and end positions of ltr and itr.
         ltr_names, ltr_contigs = read_fasta_v1(ltr_file)
         tir_names, tir_contigs = read_fasta_v1(tir_file)
         LTR_info = {}
@@ -726,7 +695,7 @@ def identify_terminals(split_file, output_dir, tool_dir):
             rTIR_end = int(TIR_right_pos_parts[0])
             TIR_info[orig_name] = (lTIR_start, lTIR_end, rTIR_start, rTIR_end)
 
-        # 更新split_file的header,添加两列 LTR:1-206,4552-4757  TIR:1-33,3869-3836
+        # Update the header of the split_file, adding two columns LTR:1-206,4552-4757 TIR:1-33,3869-3836.
         update_split_file = split_file + '.updated'
         update_contigs = {}
         names, contigs = read_fasta_v1(split_file)
@@ -745,7 +714,7 @@ def identify_terminals(split_file, output_dir, tool_dir):
         store_fasta(update_contigs, update_split_file)
         return update_split_file
     except Exception as e:
-        return e  # 将异常对象返回以便在主程序中处理
+        return e
 
 
 
@@ -763,10 +732,10 @@ def connect_LTR(repbase_path):
         species_name = parts[2]
         repbase_labels[repbase_name] = (classification, species_name)
 
-    # 获取所有LTR序列
+    # Get all LTR sequences.
     LTR_names = set()
     for name in raw_names:
-        # 识别LTR终端序列，并获得对应的内部序列名称
+        # Identify LTR terminal sequences and obtain corresponding internal sequence names.
         pattern = r'\b(\w+(-|_)?)LTR((-|_)?\w*)\b'
         matches = re.findall(pattern, name)
         if matches:
@@ -778,13 +747,13 @@ def connect_LTR(repbase_path):
             LTR_names.add(internal_name1)
             LTR_names.add(internal_name2)
 
-    # 存储分段的LTR与完整LTR的对应关系
+    # Store segmented LTR-to-complete LTR correspondences.
     SegLTR2intactLTR = {}
     new_names = []
     new_contigs = {}
     for name in raw_names:
         if name in LTR_names:
-            # 当前序列是LTR，判断内部序列是否存在
+            # If the current sequence is LTR, check if the internal sequence exists.
             pattern = r'\b(\w+(-|_)?)LTR((-|_)?\w*)\b'
             matches = re.findall(pattern, name)
             if matches:
@@ -814,11 +783,12 @@ def connect_LTR(repbase_path):
                         SegLTR2intactLTR[ltr_name] = intact_ltr_name
                         SegLTR2intactLTR[internal_name] = intact_ltr_name
         else:
-            # 如果当前序列是INT，直接丢弃，因为具有LTR的INT肯定会被识别出来，而没有LTR的INT应该被当做不完整的LTR丢弃
+            # If the current sequence is INT, discard it directly because an INT with an LTR will surely be recognized,
+            # while an INT without an LTR should be treated as an incomplete LTR and discarded.
             pattern = r'\b(\w+(-|_)?)INT((-|_)?\w*)\b'
             matches = re.findall(pattern, name)
             if not matches:
-                # 保留其余类型的转座子
+                # Retain other types of transposons.
                 new_names.append(name)
                 new_contigs[name] = raw_contigs[name]
 
@@ -831,7 +801,7 @@ def connect_LTR(repbase_path):
         final_repbase_contigs[new_name] = new_contigs[query_name]
     store_fasta(final_repbase_contigs, repbase_path)
 
-    # 存储分段的LTR与完整LTR的对应关系
+    # Store segmented LTR-to-complete LTR correspondences.
     SegLTR2intactLTRMap = config.work_dir + '/segLTR2intactLTR.map'
     with open(SegLTR2intactLTRMap, 'a+') as f_save:
         for name in SegLTR2intactLTR.keys():
@@ -842,10 +812,10 @@ def connect_LTR(repbase_path):
 
 def generate_terminal_info(data_path, work_dir, tool_dir, threads):
     output_dir = work_dir + '/temp'
-    # 将文件切分成threads块
+    # Split the file into threads blocks.
     split_files = split_fasta(data_path, output_dir, threads)
 
-    # 并行化识别LTR和TIR
+    # Parallelize the identification of LTR and TIR.
     cur_update_path = data_path + '.update'
     os.system('rm -f ' + cur_update_path)
     with ProcessPoolExecutor(threads) as executor:
@@ -894,7 +864,7 @@ def generate_minority_info(train_path, minority_train_path, minority_out, thread
     #                                                                                     'Please verify if this data exists or consider setting the parameter `--use_minority 0`.')
     #     sys.exit(-1)
     #
-    # # 2. 进行blastn比对
+    # # 2. conduct blastn alignment
     # blastn2Results_path = minority_out
     # os.system('makeblastdb -in ' + minority_train_path + ' -dbtype nucl')
     # align_command = 'blastn -db ' + minority_train_path + ' -num_threads ' \
@@ -945,7 +915,7 @@ def get_domain_info(cons, lib, output_table, threads, temp_dir):
 
     blast_db_command = 'makeblastdb -dbtype prot -in ' + lib
     os.system(blast_db_command)
-    # 1. 将cons进行划分，每一块利用blastx -num_threads 1 -evalue 1e-20 进行cons与domain进行比对
+    # 1. Divide the cons, and for each block, use blastx -num_threads 1 -evalue 1e-20 to compare cons with domain.
     partitions_num = int(threads)
     consensus_contignames, consensus_contigs = read_fasta(cons)
     data_partitions = PET(consensus_contigs.items(), partitions_num)
@@ -965,7 +935,7 @@ def get_domain_info(cons, lib, output_table, threads, temp_dir):
         jobs.append(job)
     ex.shutdown(wait=True)
 
-    # 2. 生成一个query与domain的最佳比对表
+    # 2. Generate a table of the best matches between query and domain.
     os.system("echo 'TE_name\tdomain_name\tTE_start\tTE_end\tdomain_start\tdomain_end\n' > " + output_table)
     is_exit = False
     for job in as_completed(jobs):
@@ -993,7 +963,7 @@ def multiple_alignment_blastx_v1(repeats_path, merge_distance):
         run_command(align_command)
 
         fixed_extend_base_threshold = merge_distance
-        # 将分段的blastx比对合并起来
+        # Merge segmented blastx alignments.
         query_names, query_contigs = read_fasta(split_repeats_path)
 
         # parse blastn output, determine the repeat boundary
@@ -1193,14 +1163,15 @@ def multiple_alignment_blastx_v1(repeats_path, merge_distance):
             longest_queries.sort(key=lambda x: -x[2])
             keep_longest_query[query_name] = longest_queries
         # print(keep_longest_query)
-        # 记录存成table,去掉冗余记录（后一条序列的50%以上的区域在前一条内）
+        # Save the record as a table, removing redundant records
+        # (more than 50% of the latter sequence's area is within the former).
         with open(cur_table, 'w') as f_save:
             for query_name in keep_longest_query.keys():
                 domain_array = keep_longest_query[query_name]
                 # for domain_info in domain_array:
                 #     f_save.write(query_name+'\t'+str(domain_info[6])+'\t'+str(domain_info[0])+'\t'+str(domain_info[1])+'\t'+str(domain_info[3])+'\t'+str(domain_info[4])+'\n')
                 merge_domains = []
-                # 对domain_array进行合并
+                # Merge domain_array.
                 domain_array.sort(key=lambda x: -x[2])
                 for domain_info in domain_array:
                     if len(merge_domains) == 0:
@@ -1210,7 +1181,7 @@ def multiple_alignment_blastx_v1(repeats_path, merge_distance):
                         for pre_domain in merge_domains:
                             pre_start = pre_domain[0]
                             pre_end = pre_domain[1]
-                            # 计算overlap
+                            # Calculate overlap.
                             if pre_start > pre_end:
                                 tmp = pre_start
                                 pre_start = pre_end
@@ -1250,7 +1221,7 @@ def multiple_alignment_blastx_v1(repeats_path, merge_distance):
 
 def generate_TSD_info(all_repbase_path, ncbi_ref_info, work_dir, is_expanded, keep_raw, threads):
     print('Preprocess: Start get TSD information')
-    #Step1. 按照物种，统计序列
+    # Step1. Count sequences by species.
     names, contigs = read_fasta_v1(all_repbase_path)
     speices_TE_contigs = {}
     species_TE_summary = {}
@@ -1286,7 +1257,7 @@ def generate_TSD_info(all_repbase_path, ncbi_ref_info, work_dir, is_expanded, ke
         species_count_dict[species_name] = total_num
     species_count.sort(key=lambda x: -x[1])
 
-    # Step2. 存储训练数据中物种对应的TE序列数量
+    # Step2. Store the number of TE sequences corresponding to species in the training data.
     data = {}
     species_names = []
     TE_sequences_nums = []
@@ -1301,11 +1272,11 @@ def generate_TSD_info(all_repbase_path, ncbi_ref_info, work_dir, is_expanded, ke
         os.makedirs(temp_dir)
 
     df = pd.DataFrame(data)
-    # 将 DataFrame 存储到 Excel 文件中
+    # Save the DataFrame to an Excel file.
     with pd.ExcelWriter(temp_dir + '/species_TE_num.xlsx', engine="openpyxl") as writer:
         to_excel_auto_column_weight(df, writer, f'Species TE number information')
 
-    # 看看前top 100个物种中，有多少个物种我们实际上已经有基因组了
+    # Check how many species we actually have genomes for in the top 100 species.
     keep_species_names = set()
     species_genome = {}
     with open(ncbi_ref_info, 'r') as f_r:
@@ -1329,8 +1300,8 @@ def generate_TSD_info(all_repbase_path, ncbi_ref_info, work_dir, is_expanded, ke
         top_seq_count += species_count_dict[species_name]
     print('top num:' + str(top_num) + ', all sequence count:' + str(top_seq_count))
 
-    # Step3. ①把repbase数据按照物种进行存储；②把序列比对到相应的基因组上，获取TSD信息。
-    # 把TE序列按照物种名称，存成不同的文件
+    # Step3. ① Store repbase data by species; ② Align sequences to the corresponding genomes to obtain TSD information.
+    # Store TE sequences as separate files according to species name.
     species_dir = work_dir + '/species'
     processed_species_dir = work_dir + '/species_processed'
     if os.path.exists(species_dir):
@@ -1357,7 +1328,7 @@ def generate_TSD_info(all_repbase_path, ncbi_ref_info, work_dir, is_expanded, ke
             flanking_len = 20
             final_repbase_path = expandRepBase(repbase_path, genome_path, temp_dir, threads, flanking_len, is_plant, species, is_expanded=is_expanded)
             os.system('mv ' + final_repbase_path + ' ' + processed_species_dir)
-    # 合并所有具有TSD的文件
+    # Merge all files with TSD.
     tsd_file = work_dir + '/repbase.tsd_merge.ref'
     with open(tsd_file, 'w') as out:
         for filename in os.listdir(processed_species_dir):
@@ -1393,7 +1364,7 @@ def search_TSD_regular(motif, sequence):
     motif_length = len(motif)
     pattern = ''
 
-    # 根据 motif 长度构建正则表达式模式
+    # Build a regular expression pattern based on motif length.
     if motif_length >= 8:
         for i in range(motif_length):
             pattern += f"{motif[:i]}[ACGT]{motif[i + 1:]}" if i < motif_length - 1 else motif[:i] + "[ACGT]"
@@ -1404,7 +1375,6 @@ def search_TSD_regular(motif, sequence):
 
     matches = re.finditer(pattern, sequence)
 
-    # 检查匹配是否成功
     found = False
     pos = None
     for match in matches:
@@ -1415,30 +1385,34 @@ def search_TSD_regular(motif, sequence):
     return found, pos
 
 def search_confident_tsd(orig_seq, raw_tir_start, raw_tir_end, tsd_search_distance):
-    #将坐标都换成以0开始的
+    # Change all coordinates to start from 0.
     raw_tir_start -= 1
     raw_tir_end -= 1
 
     orig_seq_len = len(orig_seq)
-    # 1.先取起始、结束位置附近的2*tsd_search_distance序列
+    # 1. First, take 2 * tsd_search_distance sequences near the start and end positions
     left_start = raw_tir_start - tsd_search_distance
     if left_start < 0:
         left_start = 0
-    left_end = raw_tir_start # 这里不向内搜索，因为我们认为Repbase边界是正确的，如果认为边界不准，会有很多种异常TSD都可能满足要求，为了简单起见，我们认为Repbase边界是准的。
+    # We don’t search inwards here because we consider Repbase boundaries to be correct.
+    # If we consider the boundaries to be incorrect, many abnormal TSDs may meet the requirements.
+    # For simplicity, we assume that Repbase boundaries are correct.
+    left_end = raw_tir_start
     left_round_seq = orig_seq[left_start: left_end]
-    # 获取left_round_seq相对于整条序列的位置偏移，用来校正后面的TSD边界位置
+    # Obtain the position offset of left_round_seq relative to the entire sequence to correct the subsequent TSD boundary positions.
     left_offset = left_start
     right_start = raw_tir_end + 1
     if right_start < 0:
         right_start = 0
     right_end = raw_tir_end + tsd_search_distance + 1
     right_round_seq = orig_seq[right_start: right_end]
-    # 获取right_round_seq相对于整条序列的位置偏移，用来校正后面的TSD边界位置
+    # Obtain the position offset of right_round_seq relative to the entire sequence to correct the subsequent TSD boundary positions.
     right_offset = right_start
 
-    # 2.将左边的序列由大到小切成k-mer, 然后用k-mer去搜索右边序列，如果找到了，记录为候选TSD，最后选择离原始边界最近的当作TSD
+    # 2. Split the left sequence into k-mers from large to small, then search for the right sequence with k-mers.
+    # If found, record as a candidate TSD, and finally select the closest one to the original boundary as the TSD.
     TIR_TSDs = [15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2]
-    # 记录的位置应该是离原始边界最近的位置
+    # Record the position nearest to the original boundary.
     is_found = False
     tsd_set = []
     for k_num in TIR_TSDs:
@@ -1451,7 +1425,7 @@ def search_confident_tsd(orig_seq, raw_tir_start, raw_tir_end, tsd_search_distan
             if found_tsd and not left_kmer.__contains__('N'):
                 right_pos = right_offset + right_pos - 1
                 is_found = True
-                # 计算与离原始边界距离
+                # Calculate the distance from the original boundary.
                 left_distance = abs(left_pos - raw_tir_start)
                 right_distance = abs(right_pos - raw_tir_end)
                 distance = left_distance + right_distance
@@ -1469,94 +1443,6 @@ def search_confident_tsd(orig_seq, raw_tir_start, raw_tir_end, tsd_search_distan
         TSD_len = tsd_set[0][1]
         min_distance = tsd_set[0][0]
     return TSD_seq, TSD_len, min_distance
-
-def search_confident_tsd_bak(orig_seq, raw_tir_start, raw_tir_end, tsd_search_distance, query_name, plant):
-    #将坐标都换成以0开始的
-    raw_tir_start -= 1
-    raw_tir_end -= 1
-
-    #我们之前的方法时间复杂度是100*100*9=90000
-    #我现在希望通过切kmer的方法将时间复杂度降为9*（100-k）*2=1800
-    #节省的时间为50倍
-    itr_contigs = {}
-    orig_seq_len = len(orig_seq)
-    TSD_set = set()
-    # 1.先取起始、结束位置附近的2*tsd_search_distance序列
-    left_start = raw_tir_start - tsd_search_distance
-    if left_start < 0:
-        left_start = 0
-    left_end = raw_tir_start + tsd_search_distance + 1
-    left_round_seq = orig_seq[left_start: left_end]
-    #获取left_round_seq相对于整条序列的位置偏移，用来校正后面的TSD边界位置
-    left_offset = left_start
-    right_start = raw_tir_end - tsd_search_distance
-    if right_start < 0:
-        right_start = 0
-    right_end = raw_tir_end + tsd_search_distance + 1
-    right_round_seq = orig_seq[right_start: right_end]
-    #获取right_round_seq相对于整条序列的位置偏移，用来校正后面的TSD边界位置
-    right_offset = right_start
-
-    # 2.将左右两边的序列切成k-mer，用一个dict存起左边的k-mer，然后遍历右边k-mer时，判断是不是和左边k-mer一致，如果一致，则为一个候选的TSD，记录下位置信息
-    TIR_TSDs = [15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2]
-    # 记录的位置应该是离原始边界最近的位置
-    # exist_tsd -> {'TAA': {'left_pos': 100, 'right_pos': 200}}
-    exist_tsd = {}
-    for k_num in TIR_TSDs:
-        for i in range(len(left_round_seq) - k_num + 1):
-            left_kmer = left_round_seq[i: i + k_num]
-            cur_pos = left_offset + i + k_num
-            if cur_pos < 0 or cur_pos > orig_seq_len-1:
-                continue
-            if not exist_tsd.__contains__(left_kmer):
-                exist_tsd[left_kmer] = {}
-            pos_dict = exist_tsd[left_kmer]
-            if not pos_dict.__contains__('left_pos'):
-                pos_dict['left_pos'] = cur_pos
-            else:
-                prev_pos = pos_dict['left_pos']
-                #判断谁的位置离原始边界更近
-                if abs(cur_pos-raw_tir_start) < abs(prev_pos-raw_tir_start):
-                    pos_dict['left_pos'] = cur_pos
-            exist_tsd[left_kmer] = pos_dict
-    for k_num in TIR_TSDs:
-        for i in range(len(right_round_seq) - k_num + 1):
-            right_kmer = right_round_seq[i: i + k_num]
-            cur_pos = right_offset + i - 1
-            if cur_pos < 0 or cur_pos > orig_seq_len - 1:
-                continue
-            if exist_tsd.__contains__(right_kmer):
-                #这是一个TSD
-                pos_dict = exist_tsd[right_kmer]
-                if not pos_dict.__contains__('right_pos'):
-                    pos_dict['right_pos'] = cur_pos
-                else:
-                    prev_pos = pos_dict['right_pos']
-                    # 判断谁的位置离原始边界更近
-                    if abs(cur_pos - raw_tir_end) < abs(prev_pos - raw_tir_end):
-                        pos_dict['right_pos'] = cur_pos
-                exist_tsd[right_kmer] = pos_dict
-                #判断这个TSD是否满足一些基本要求
-                tir_start = pos_dict['left_pos']
-                tir_end = pos_dict['right_pos']
-                first_3bp = orig_seq[tir_start: tir_start + 3]
-                last_3bp = orig_seq[tir_end - 2: tir_end+1]
-                if (k_num != 2) or (k_num == 2 and (right_kmer == 'TA' or (plant == 0 and first_3bp == 'CCC' and last_3bp == 'GGG'))):
-                    TSD_set.add((right_kmer, tir_start, tir_end))
-
-    # 按照tir_start, tir_end与原始边界的距离进行排序，越近的排在前面
-    TSD_set = sorted(TSD_set, key=lambda x: ((abs(x[1] - raw_tir_start) + abs(x[2] - raw_tir_end)), -len(x[0])))
-
-    final_tsd = 'unknown'
-    final_tsd_len = 0
-    if len(TSD_set) > 0:
-        tsd_info = TSD_set[0]
-        final_tsd = tsd_info[0]
-        final_tsd_len = len(tsd_info[0])
-        final_TE = orig_seq[tsd_info[1]: tsd_info[2]+1]
-    else:
-        final_TE = orig_seq[raw_tir_start: raw_tir_end+1]
-    return final_tsd, final_tsd_len, final_TE
 
 def getReverseSequence(sequence):
     base_map = {'A': 'T', 'T': 'A', 'C': 'G', 'G': 'C'}
@@ -1970,7 +1856,7 @@ def get_seq_TSDs(batch_member_file, flanking_len, is_expanded, expandClassNum, r
 
     cur_member_file = batch_member_file[2]
     cur_contignames, cur_contigs = read_fasta(cur_member_file)
-    # 获取所有拷贝对应的TSD
+    # Get all copies corresponding to TSD.
     for i, query_name in enumerate(cur_contignames):
         seq = cur_contigs[query_name]
         tir_start = flanking_len + 1
@@ -2032,10 +1918,15 @@ def get_copies_TSD_info_bak(batch_member_files, flanking_len, plant, is_expanded
     return tsd_info
 
 def expandRepBase(repbase_path, genome_path, temp_dir, threads, flanking_len, plant, species, is_expanded=0):
-    # 这个函数的目的是将Repbase数据库中数量较少类别进行扩增，使得整个Repbase数据集变得平衡，扩增的方法如下：
-    # 1.将所有的数据比对到基因组上，获取它们的拷贝
-    # 2.获取每种类型的序列需要扩增的拷贝次数，例如 Merlin：20次。每一种类型的扩增次数不一样，具体可参见 expandClassNum 参数。
-    # 默认是不扩增，也就是获取当前序列的TSD，只有当我们希望获得平衡数据集时，才进行扩增。
+    # The purpose of this function is to expand the relatively less abundant categories in the Repbase
+    # database to balance the entire Repbase dataset. The expansion method is as follows:
+    # 1. Align all data to the genome to obtain their copies.
+    # 2. Get the number of copies needed for each type of sequence expansion.
+    # For example, Merlin: 20 times. The number of expansions for each type varies.
+    # Refer to the expandClassNum parameter for details.
+    # By default, no expansion is performed, that is, only the TSD of the current sequence is obtained.
+    # Expansion is only carried out when we want to obtain a balanced dataset.
+
     os.system('rm -rf ' + temp_dir)
     if not os.path.exists(temp_dir):
         os.makedirs(temp_dir)
@@ -2049,13 +1940,16 @@ def expandRepBase(repbase_path, genome_path, temp_dir, threads, flanking_len, pl
         classification = parts[1]
         species_name = parts[2]
         repbase_labels[repbase_name] = (classification, species_name)
-    # # 连接Repbase中的LTR元素
+    # # Concatenate LTR elements in Repbase.
     # processed_TE_path, repbase_labels = connect_LTR(repbase_path)
-    # 获取所有元素带侧翼序列的拷贝，返回的是一个数组，每一个元素为 (query_name, query_seq, cur_member_file)的元组，cur_member_file为这个元素对应的所有拷贝集合文件
+    # Get all copies of elements with side sequence. Returns an array,
+    # where each element is a tuple (query_name, query_seq, cur_member_file),
+    # and cur_member_file is the collection file corresponding to this element
     batch_member_files = get_flanking_copies(repbase_path, genome_path, flanking_len, temp_dir, threads)
-    # 获取原始序列对应的每个拷贝对应的TSD信息，每一种分类对应的拷贝数量，按照 expandClassNum 确定
+    # Obtain TSD information corresponding to each copy of the original sequence
+    # and the number of copies for each classification, according to expandClassNum.
     tsd_info = get_copies_TSD_info(batch_member_files, flanking_len, is_expanded, repbase_labels, threads)
-    # 将所有的序列存成文件，拷贝序列名称为在原有的名称后面加-C_{num}
+    # Save all sequences as files, with the copy sequence name added with -C_{num}.
     names, contigs = read_fasta(repbase_path)
     final_repbase_path = temp_dir + '/' + species + '.ref'
     final_repbase_contigs = {}
@@ -2068,13 +1962,14 @@ def expandRepBase(repbase_path, genome_path, temp_dir, threads, flanking_len, pl
         else:
             copies_tsd_info = [('Unknown', 16, -1)]
 
-        # 遍历一边，取出distance为0的TSD；
+        # Traverse and extract TSDs with a distance of 0;
         new_copies_tsd_info = []
         for tsd_seq, tsd_len, cur_distance in copies_tsd_info:
             if cur_distance <= 0:
                 new_copies_tsd_info.append((tsd_seq, tsd_len, cur_distance))
         copies_tsd_info = new_copies_tsd_info if len(new_copies_tsd_info) > 0 else copies_tsd_info
-        # 将所有的拷贝对应的TSD存储起来，记录每种长度的TSD对应的出现次数和离原始边界的距离
+        # Store all copies corresponding to TSDs, recording the number of occurrences and
+        # distances from the original boundary for each length of TSD.
         max_count_TSD = {}
         length_count = {}
         for tsd_seq, tsd_len, cur_distance in copies_tsd_info:
@@ -2087,8 +1982,9 @@ def expandRepBase(repbase_path, genome_path, temp_dir, threads, flanking_len, pl
                     prev_distance = cur_distance
                     max_count_TSD[tsd_len] = tsd_seq
                 length_count[tsd_len] = (prev_count + 1, prev_distance)
-        # 按照(tsd_len, tsd_seq, 出现次数, 最小距离)存成数组
-        # 取出现次数最多的TSD，如果有多个出现次数最多，取distance最小的那个，如果distance相同，取最长的那个
+        # Store as an array based on (tsd_len, tsd_seq, occurrence count, minimum distance).
+        # Take the most frequently occurring TSD. If multiple occurrences are the same,
+        # take the one with the smallest distance from the original boundary and the longest length.
         all_tsd_set = []
         for tsd_len in length_count.keys():
             cur_count, cur_distance = length_count[tsd_len]
@@ -2108,33 +2004,26 @@ def expandRepBase(repbase_path, genome_path, temp_dir, threads, flanking_len, pl
     return final_repbase_path
 
 def to_excel_auto_column_weight(df: pd.DataFrame, writer: ExcelWriter, sheet_name="Shee1"):
-    """DataFrame保存为excel并自动设置列宽"""
-    # 数据 to 写入器，并指定sheet名称
     df.to_excel(writer, sheet_name=sheet_name, index=False)
-    #  计算每列表头的字符宽度
     column_widths = (
         df.columns.to_series().apply(lambda x: len(str(x).encode('gbk'))).values
     )
-    #  计算每列的最大字符宽度
     max_widths = (
         df.astype(str).applymap(lambda x: len(str(x).encode('gbk'))).agg(max).values
     )
-    # 取前两者中每列的最大宽度
     widths = np.max([column_widths, max_widths], axis=0)
-    # 指定sheet，设置该sheet的每列列宽
     worksheet = writer.sheets[sheet_name]
     for i, width in enumerate(widths, 1):
-        # openpyxl引擎设置字符宽度时会缩水0.5左右个字符，所以干脆+2使左右都空出一个字宽。
         worksheet.column_dimensions[get_column_letter(i)].width = width + 2
 
 def split2TrainTest(total_path, train_path, test_path):
-    # 1. 先将Repbase数据按照8-2比例划分成训练集和测试集
+    # 1. Split the Repbase data into a 8-2 ratio for training and testing sets.
     names, contigs = read_fasta_v1(total_path)
-    # 随机打乱列表
+    # Shuffle the list randomly.
     random.shuffle(names)
-    # 计算划分的索引位置
+    # Calculate the split index positions.
     split_index = int(0.8 * len(names))
-    # 划分成80%和20%的两个列表
+    # Split into two lists of 80% and 20%.
     train_list = names[:split_index]
     test_list = names[split_index:]
     train_contigs = {}
@@ -2170,11 +2059,8 @@ def extract_60_species(total_repbase, train_species_path, test_species_path):
     species_names = list(species_names)
     train_contigs = {}
     test_contigs = {}
-    # 随机打乱列表
     random.shuffle(species_names)
-    # 计算划分的索引位置
     split_index = int(0.9 * len(species_names))
-    # 划分成90%和10%的两个列表
     train_list = species_names[:split_index]
     test_list = species_names[split_index:]
     for name in names:
@@ -2218,13 +2104,12 @@ def get_other_species_from_raw_repbase(raw_repbase, total_repbase, train_species
 
 def extract_non_autonomous(repbase_path, work_dir):
     contigNames, contigs = read_fasta_v1(repbase_path)
-    # 从具有TSD的Repbase序列中抽取出除DIRS, Helitron, Crypton 之外的所有非自治的转座子
-    # 定义正则表达式识别所有的非自治的转座子
+    # Extract all non-autonomous transposons from Repbase sequences with TSDs, excluding DIRS, Helitron, and Crypton.
+    # Define a regular expression to identify all non-autonomous transposons.
     pattern = r'\b\w+[-|_]\d*N\d*[-|_]\w+\b'
     filter_labels = ('Helitron', 'Crypton', 'DIRS', 'Penelope', 'RTE', 'Gypsy', 'L1', 'Retrovirus', 'Jockey', 'I', 'Bel-Pao', 'Copia','R2' )
     non_auto_TEs = {}
     non_auto_repbase_path = work_dir + '/all_repbase.non_auto.ref'
-    # 对每个字符串进行匹配
     for name in contigNames:
         parts = name.split('\t')
         seq_name = parts[0]
