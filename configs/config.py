@@ -20,7 +20,8 @@ use_ends = 1    # Whether to use 5-bp ends feature
 
 use_minority = 0 # Whether to use minority samples to correct results
 is_train = 0  # Whether it is in the model training stage
-keep_raw = 1  # Whether to retain the raw input sequence, 1 yes, 0 no, only save species having TSDs
+keep_raw = 0  # Whether to retain the raw input sequence, 1 yes, 0 no, only save species having TSDs
+only_preprocess = 0 # Whether to only perform data preprocessing
 is_predict = 1  # Enable prediction mode. Setting to 0 requires the input FASTA file to be in Repbase format (seq_name\tLabel\tspecies).
 is_wicker = 1   # Use Wicker classification labels. Setting to 0 will output RepeatMasker classification labels.
 is_plant = 0 # Is the input genome of a plant? 0 represents non-plant, while 1 represents plant.

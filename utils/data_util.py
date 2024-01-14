@@ -135,7 +135,7 @@ def generate_random_sequences(num_sequences):
 
     # Generate sequences ranging from 0 to 600 in length.
     num_sequences_range1 = num_sequences // 4
-    sequence_lengths.extend(random.randint(0, 600) for _ in range(num_sequences_range1))
+    sequence_lengths.extend(random.randint(80, 600) for _ in range(num_sequences_range1))
 
     # Generate sequences ranging from 601 to 1800 in length.
     num_sequences_range2 = num_sequences // 4
@@ -2102,14 +2102,14 @@ def get_other_species_from_raw_repbase(raw_repbase, total_repbase, train_species
     print(len(name_set))
     print(len(current_name_set))
 
-def extract_non_autonomous(repbase_path, work_dir):
+def extract_non_autonomous(repbase_path, out_path):
     contigNames, contigs = read_fasta_v1(repbase_path)
     # Extract all non-autonomous transposons from Repbase sequences with TSDs, excluding DIRS, Helitron, and Crypton.
     # Define a regular expression to identify all non-autonomous transposons.
     pattern = r'\b\w+[-|_]\d*N\d*[-|_]\w+\b'
-    filter_labels = ('Helitron', 'Crypton', 'DIRS', 'Penelope', 'RTE', 'Gypsy', 'L1', 'Retrovirus', 'Jockey', 'I', 'Bel-Pao', 'Copia','R2' )
+    filter_labels = ('Helitron', 'Crypton', 'DIRS', 'Penelope', 'RTE', 'Gypsy', 'L1', 'Retrovirus', 'Jockey', 'I', 'Bel-Pao', 'Copia','R2', 'Unknown')
     non_auto_TEs = {}
-    non_auto_repbase_path = work_dir + '/all_repbase.non_auto.ref'
+    non_auto_repbase_path = out_path
     for name in contigNames:
         parts = name.split('\t')
         seq_name = parts[0]
@@ -2118,10 +2118,9 @@ def extract_non_autonomous(repbase_path, work_dir):
         if matches:
             if label not in filter_labels:
                 non_auto_TEs[name] = contigs[name]
-    print(len(non_auto_TEs))
+    print('non-autonomous DNA number: ' + str(len(non_auto_TEs)))
     store_fasta(non_auto_TEs, non_auto_repbase_path)
 
-    non_auto_repbase_path = work_dir + '/all_repbase.non_auto.ref'
     contignames, contigs = read_fasta_v1(non_auto_repbase_path)
     type_count = {}
     for name in contignames:
@@ -2130,4 +2129,5 @@ def extract_non_autonomous(repbase_path, work_dir):
             type_count[label] = 0
         count = type_count[label]
         type_count[label] = count + 1
+    print('non-autonomous DNA type:')
     print(type_count)

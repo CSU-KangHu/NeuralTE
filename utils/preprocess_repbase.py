@@ -10,7 +10,7 @@ configs_folder = os.path.join(current_folder, "..")
 sys.path.append(configs_folder)
 
 from configs import config
-from utils.data_util import read_fasta_v1, read_fasta, store_fasta
+from utils.data_util import read_fasta_v1, read_fasta, store_fasta, generate_random_sequences, generate_random_sequence
 
 
 def split_fasta(cur_path, output_dir, num_chunks):
@@ -239,14 +239,30 @@ def main():
 
     # 1. Merge all Repbase files under the Repbase directory, retaining only sequences with headers in the format seq_name\tlabel\tspecies_name
     # 2. Retain sequences that can be converted to Wicker superfamily labels; it's difficult to determine the superfamily category for other sequences
+    non_TE = ('tandem repeat', 'Tandem repeat',
+              'MSAT', 'SAT', 'Satellite repetitive element', 'satellite', 'Satellite',
+              'Simple Repeat', 'Multicopy gene', 'Pseudogene')
+    non_TE_count = 0
     files = get_all_files(repbase_dir)
     all_repbase_contigs = {}
     for file in files:
         names, contigs = read_fasta_v1(file)
         for name in names:
             parts = name.split('\t')
-            if len(parts) == 3 and config.Repbase_wicker_labels.__contains__(parts[1]):
-                all_repbase_contigs[name] = contigs[name]
+            if len(parts) == 3:
+                if config.Repbase_wicker_labels.__contains__(parts[1]):
+                    all_repbase_contigs[name] = contigs[name]
+                elif parts[1] in non_TE:
+                    new_name = parts[0] + '\t' + 'Unknown' + '\t' + parts[2]
+                    non_TE_count += 1
+                    all_repbase_contigs[new_name] = contigs[name]
+    # generate random sequences
+    num_sequences = 1000
+    sequences_lengths = generate_random_sequences(num_sequences)
+    for i, l in enumerate(sequences_lengths):
+        seq = generate_random_sequence(l)
+        all_repbase_contigs['Random_' + str(i + 1) + '\t' + 'Unknown' + '\t' + 'Oryza sativa'] = seq
+    print('non_TE_count: ' + str(non_TE_count))
     store_fasta(all_repbase_contigs, repbase_path)
     # 3. Concatenate Repbase sequences' LTRs and Internals, filtering out incomplete LTR sequences
     repbase_path, repbase_labels = connect_LTR(repbase_path)

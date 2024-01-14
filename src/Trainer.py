@@ -54,6 +54,7 @@ def main():
     parser.add_argument('--is_train', required=True, metavar='is_train', help='Enable train mode, 1: true, 0: false. default = [ ' + str(config.is_train) + ' ]')
     parser.add_argument('--is_predict', required=True, metavar='is_predict', help='Enable prediction mode, 1: true, 0: false. default = [ ' + str(config.is_predict) + ' ]')
 
+    parser.add_argument('--only_preprocess', metavar='only_preprocess', help='Whether to only perform data preprocessing, 1: true, 0: false.')
     parser.add_argument('--keep_raw', metavar='keep_raw', help='Whether to retain the raw input sequence, 1: true, 0: false; only save species having TSDs. default = [ ' + str(config.keep_raw) + ' ]')
     parser.add_argument('--genome', metavar='genome', help='Genome path, use to search for TSDs')
     parser.add_argument('--use_kmers', metavar='use_kmers', help='Whether to use kmers features, 1: true, 0: false. default = [ ' + str(config.use_kmers) + ' ]')
@@ -85,6 +86,7 @@ def main():
     use_domain = args.use_domain
     use_ends = args.use_ends
     is_train = args.is_train
+    only_preprocess = args.only_preprocess
     keep_raw = args.keep_raw
     is_predict = args.is_predict
     threads = args.threads
@@ -116,6 +118,8 @@ def main():
         config.is_train = int(is_train)
     if keep_raw is not None:
         config.keep_raw = int(keep_raw)
+    if only_preprocess is not None:
+        config.only_preprocess = int(only_preprocess)
     if is_predict is not None:
         config.is_predict = int(is_predict)
     if threads is not None:
@@ -168,17 +172,19 @@ def main():
     dtime1 = endtime1 - starttime1
     print("Running time of DataProcessor: %.8s s" % (dtime1))
 
-    starttime2 = time.time()
-    # Instantiate the Trainer class
-    trainer = Trainer()
-    # start training
-    model_path = trainer.train(X, y, config.cnn_num_convs, config.cnn_filters_array)
-    print('Trained model is stored in:', model_path)
-    endtime2 = time.time()
-    dtime2 = endtime2 - starttime2
-    print("Running time of model Trainer: %.8s s" % (dtime2))
+    if not config.only_preprocess:
+        starttime2 = time.time()
+        # Instantiate the Trainer class
+        trainer = Trainer()
+        # start training
+        model_path = trainer.train(X, y, config.cnn_num_convs, config.cnn_filters_array)
+        print('Trained model is stored in:', model_path)
+        endtime2 = time.time()
+        dtime2 = endtime2 - starttime2
+        print("Running time of model Trainer: %.8s s" % (dtime2))
 
-    dtime = endtime2 - starttime1
+    endtime3 = time.time()
+    dtime = endtime3 - starttime1
     print("Running time of total NeuralTE-Trainer: %.8s s" % (dtime))
 
 if __name__ == '__main__':

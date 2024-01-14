@@ -13,6 +13,7 @@ sys.path.append(configs_folder)
 from utils.show_util import showToolName, showTestParams
 from keras.models import load_model
 from configs import config
+from configs import gpu_config
 from DataProcessor import DataProcessor
 from utils.evaluate_util import get_metrics, correct_using_minority
 from utils.data_util import get_feature_len
@@ -40,8 +41,8 @@ def main():
     parser = argparse.ArgumentParser(description=describe_info)
     parser.add_argument('--data', required=True, metavar='data', help='Input fasta file used to predict, header format: seq_name\tlabel\tspecies_name, refer to "data/test.example.fa" for example.')
     parser.add_argument('--outdir', required=True, metavar='output_dir', help='Output directory, store temporary files')
-    parser.add_argument('--use_TSD', required=True, metavar='use_TSD', help='Whether to use TSD features, 1: true, 0: false. default = [ ' + str(config.use_TSD) + ' ]')
-    parser.add_argument('--is_predict', required=True, metavar='is_predict', help='Enable prediction mode, 1: true, 0: false. default = [ ' + str(config.is_predict) + ' ]')
+    parser.add_argument('--use_TSD', metavar='use_TSD', help='Whether to use TSD features, 1: true, 0: false. default = [ ' + str(config.use_TSD) + ' ]')
+    parser.add_argument('--is_predict', metavar='is_predict', help='Enable prediction mode, 1: true, 0: false. default = [ ' + str(config.is_predict) + ' ]')
 
     parser.add_argument('--keep_raw', metavar='keep_raw', help='Whether to retain the raw input sequence, 1: true, 0: false; only save species having TSDs. default = [ ' + str(config.keep_raw) + ' ]')
     parser.add_argument('--genome', metavar='genome', help='Genome path, use to search for TSDs')

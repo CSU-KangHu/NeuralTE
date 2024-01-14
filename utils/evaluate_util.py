@@ -1035,7 +1035,16 @@ def plot_3D_param(x, y, z, work_dir):
     plt.rcParams['axes.unicode_minus'] = False
 
     surf=ax3.plot_surface(X, Y, Z, cmap='BuPu', linewidth=0, antialiased=False)
-    fig.colorbar(surf, shrink=0.6)
+    ax3.set_xlabel('internal')
+    ax3.set_ylabel('terminal')
+    ax3.set_zlabel('F1-score')
+    colorbar = fig.colorbar(surf, shrink=0.6)
+
+    # 调整颜色条的位置
+    position = ax3.get_position()
+    colorbar_position = [position.x0 + position.width + 0.1, position.y0, 0.02, position.height]
+    colorbar.ax.set_position(colorbar_position)
+
     #plt.show()
     plt.savefig(work_dir + '/output.png', dpi=500)
 
