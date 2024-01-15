@@ -142,5 +142,3 @@ cython_debug/
 .idea
 /.idea/
 
-# demo
-demo/*
