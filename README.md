@@ -46,7 +46,8 @@ git clone https://github.com/CSU-KangHu/NeuralTE.git # Alternatively, you can do
 cd NeuralTE
 chmod +x tools/*
 
-conda env create --name NeuralTE -f environment.yml
+conda install mamba -c conda-forge
+mamba env create --name NeuralTE -f environment.yml
 conda activate NeuralTE
 ```
 
@@ -81,7 +82,7 @@ python ${pathTo}/NeuralTE/src/Classifier.py \
  # python /home/hukang/NeuralTE/src/Classifier.py \
  # --data /home/hukang/NeuralTE/demo/test.fa \
  # --model_path /home/hukang/NeuralTE/models/NeuralTE_model.h5 \
- # --outdir /home/hukang/NeuralTE/work \
+ # --outdir /home/hukang/NeuralTE/demo/work \
  # --thread 40
  
  
@@ -105,7 +106,7 @@ python ${pathTo}/NeuralTE/src/Classifier.py \
  # --genome /home/hukang/NeuralTE/demo/genome.fa \
  # --use_TSD 1 \
  # --model_path /home/hukang/NeuralTE/models/NeuralTE-TSDs_model.h5 \
- # --outdir /home/hukang/NeuralTE/work \
+ # --outdir /home/hukang/NeuralTE/demo/work \
  # --thread 40
 ```
 
@@ -113,7 +114,7 @@ python ${pathTo}/NeuralTE/src/Classifier.py \
 - Prerequisites: \
        [Repbase*.fasta.tar.gz](https://www.girinst.org/server/RepBase/index.php) (version>=28.06)\
        [Genomes](https://www.ncbi.nlm.nih.gov/) (Optional, for TSDs model only)
-- For more detailed information, please refer to [Experiment Reproduction](#reproduction).
+- For more detailed information, please refer to [Experiment reproduction](#reproduction).
 
 ```sh
 # 0. Preprocess Repbase database (including merging subfiles, concatenating LTR terminal and internal sequences, filtering incomplete LTR transposons, etc.)
@@ -279,7 +280,7 @@ optional arguments:
                         Enable prediction mode, 1: true, 0: false. default = [ 1 ]
   --keep_raw keep_raw   Whether to retain the raw input sequence, 1: true, 0: false; only save species having TSDs. default = [ 0 ]
   --genome genome       Genome path, use to search for TSDs
-  --species species     Which species does the TE library to be classified come from?
+  --species species     Which species does the TE library to be classified come from.
   --model_path model_path
                         Input the path of trained model, absolute path.
   --use_kmers use_kmers

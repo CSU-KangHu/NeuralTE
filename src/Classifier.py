@@ -46,7 +46,7 @@ def main():
 
     parser.add_argument('--keep_raw', metavar='keep_raw', help='Whether to retain the raw input sequence, 1: true, 0: false; only save species having TSDs. default = [ ' + str(config.keep_raw) + ' ]')
     parser.add_argument('--genome', metavar='genome', help='Genome path, use to search for TSDs')
-    parser.add_argument('--species', metavar='species', help='Which species does the TE library to be classified come from?')
+    parser.add_argument('--species', metavar='species', help='Which species does the TE library to be classified come from.')
     parser.add_argument('--model_path', metavar='model_path', help='Input the path of trained model, absolute path.')
     parser.add_argument('--use_kmers', metavar='use_kmers', help='Whether to use kmers features, 1: true, 0: false. default = [ ' + str(config.use_kmers) + ' ]')
     parser.add_argument('--use_terminal', metavar='use_terminal', help='Whether to use LTR, TIR terminal features, 1: true, 0: false. default = [ ' + str(config.use_terminal) + ' ]')
