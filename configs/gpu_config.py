@@ -1,5 +1,5 @@
 # 1. Configuring multi-GPU usage
-start_gpu_num = 1 # Start GPU numbering
+start_gpu_num = 0 # Start GPU numbering
 use_gpu_num = 1 # Number of GPUs to use, start_gpu_num=0, use_gpu_num=2 indicates using GPU0, GPU1, totaling two GPUs
 all_devices = ["/gpu:0", "/gpu:1", "/gpu:2", "/gpu:3", "/gpu:4", "/gpu:5", "/gpu:6", "/gpu:7"] # All GPU numbers on the machine. If your machine has more than 8 GPUs, add "/gpu:8", "/gpu:9" ... afterward.
 

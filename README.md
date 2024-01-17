@@ -42,7 +42,7 @@ Recommended Hardware requirements: 40 CPU processors, 128 GB RAM.
 Recommended OS: (Ubuntu 16.04, CentOS 7, etc.)
 
 ```sh
-git clone https://github.com/CSU-KangHu/NeuralTE.git # Alternatively, you can download the zip file directly from the repository.
+git clone https://github.com/CSU-KangHu/NeuralTE.git ## Alternatively, you can download the zip file directly from the repository.
 cd NeuralTE
 chmod +x tools/*
 
