@@ -137,7 +137,7 @@ def generate_predict_gff(rice_gff, rice_repbase_gff, label_dict, chromosomes):
         with open(rice_gff, 'r') as f_r:
             for line in f_r:
                 if not line.startswith('#'):
-                    line = 'Chr' + line
+                    # line = 'Chr' + line
                     parts = line.split('\t')
                     chr_name = parts[0]
                     if chr_name not in chromosomes:
@@ -334,7 +334,7 @@ if __name__ == '__main__':
     # # 重新训练DeepTE模型
     # # 1. 训练LINE模型
     # # 1.1 先提取Dataset2中的train.ref中的LINE元素对应的序列，转换成label,sequence格式
-    # work_dir = '/home/hukang/NeuralTE_experiment/Dataset6/DeepTE'
+    # work_dir = '/home/hukang/NeuralTE_experiment/exclude_rice_maize_zebrafish/DeepTE'
     # train = work_dir + '/train.ref'
     # contigNames, contigs = read_fasta_v1(train)
     # LINE_labels = ['R2', 'RTE', 'Jockey', 'L1', 'I']
@@ -531,7 +531,7 @@ if __name__ == '__main__':
     # predict_path = '/home/hukang/TE_Classification/ClassifyTE/output/predicted_out_new_features_test.csv'
     # evaluate_ClassifyTE(predict_path)
 
-    # work_dir = '/home/hukang/TE_Classification/TERL/Data/DS6'
+    # work_dir = '/home/hukang/TE_Classification/TERL/Data/validate_TE'
     # fasta_file = work_dir + '/train.ref'
     # outdir = work_dir + '/Train'
     # generate_TERL_dataset(fasta_file, outdir)
@@ -952,7 +952,7 @@ if __name__ == '__main__':
     # # 将RepeatMasker的同源搜索库替换成train.ref，看是否能运行
     # work_dir = '/home/hukang/miniconda3/envs/HiTE/share/RepeatMasker/Libraries'
     # rm_lib = work_dir + '/RepeatMasker.lib'
-    # train = '/home/hukang/NeuralTE_experiment/Dataset5/train.ref'
+    # train = '/home/hukang/NeuralTE_experiment/Dataset6/train.ref'
     #
     # wicker2RM = {}
     # # 转换成RepeatMasker标签
@@ -1293,12 +1293,37 @@ if __name__ == '__main__':
     # tmp_output_dir = '/home/hukang/NeuralTE_experiment/Seq_logos'
     # generate_seq_logos(TE_path, tmp_output_dir)
 
-    # # 识别HiTE中的新转座子
-    # tmp_output_dir = '/home/hukang/NeuralTE_experiment/novel_TE/rice/tir_work'
-    # # confident_tir_path = tmp_output_dir + '/confident_tir.fa'
-    # # tir_repbase_path =  tmp_output_dir + '/oryrep.ref'
-    # # identify_new_TIR(confident_tir_path, tir_repbase_path, tmp_output_dir)
-    #
+    # 识别HiTE中的新转座子
+    # tmp_output_dir = '/home/hukang/NeuralTE_experiment/novel_TE/maize'
+    # confident_tir_path = tmp_output_dir + '/maize.fa'
+    # tir_repbase_path =  tmp_output_dir + '/maize.ref'
+    # species = 'Zea mays'
+    # names, contigs = read_fasta(confident_tir_path)
+    # new_contigs = {}
+    # for name in names:
+    #     parts = name.split('#')
+    #     raw_name = parts[0]
+    #     label = parts[1]
+    #     new_name = raw_name+'\t'+label+'\t'+species
+    #     new_contigs[new_name] = contigs[name]
+    # store_fasta(new_contigs, confident_tir_path)
+    # # 连接LTRs
+    # connect_LTR(confident_tir_path)
+    # connect_LTR(tir_repbase_path)
+    # # 去掉solo-LTR
+    # names, contigs = read_fasta(confident_tir_path)
+    # for name in names:
+    #     if name.endswith('-LTR') or name.endswith('-INT'):
+    #         del contigs[name]
+    # store_fasta(contigs, confident_tir_path)
+    # names, contigs = read_fasta(tir_repbase_path)
+    # for name in names:
+    #     if name.endswith('-LTR') or name.endswith('-INT') or name.endswith('_LTR') or name.endswith('_I') or name.endswith('-I') or name.__contains__('-I_'):
+    #         del contigs[name]
+    # store_fasta(contigs, tir_repbase_path)
+
+    # identify_new_TIR(confident_tir_path, tir_repbase_path, tmp_output_dir)
+
     # # #识别每一种superfamily，存成文件
     # novel_tir_consensus = tmp_output_dir + '/novel_tir.fa'
     # contigNames, contigs = read_fasta(novel_tir_consensus)
@@ -1343,8 +1368,8 @@ if __name__ == '__main__':
     #     output_path = tmp_output_dir + '/' + type + '_insert_time.txt'
     #     output_fig = tmp_output_dir + '/' + type + '_insert_time.png'
     #     get_insert_time_dist_boxplot(output_path, output_fig, type, colors[i])
-    #
-    #
+
+
     # # 将RepeatMasker的注释转为bed文件，并过滤掉非全长TE
     # RMOut = tmp_output_dir + '/novel_tir.out'
     # out_bed = tmp_output_dir + '/novel_tir.full_length.bed'
@@ -1558,7 +1583,7 @@ if __name__ == '__main__':
     # store_fasta(non_TE_contigs, non_TE_path)
 
     # # 生成RepeatClassifier的标签
-    # RepeatClassifier_pred_path = '/home/hukang/NeuralTE_experiment/novel_TE/rice/tir_work/RC/novel_tir.fa.classified'
+    # RepeatClassifier_pred_path = '/home/hukang/NeuralTE_experiment/novel_TE/maize/RC/novel_tir.fa.classified'
     # rmToWicker = {}
     # wicker_superfamily_set = set()
     # with open(config.project_dir + '/data/TEClasses.tsv', 'r') as f_r:
@@ -1629,42 +1654,48 @@ if __name__ == '__main__':
     # print(label_nums)
     # print('all_unique_RM_label:' + str(all_unique_RM_label))
     #
-    # chromosomes = [f'Chr{i}' for i in range(1, 13)]
-    # rice_gff = '/home/hukang/NeuralTE_experiment/novel_TE/rice/tir_work/RC/novel_tir.gff.bak'
-    # rice_RepeatClassifier_gff = '/home/hukang/NeuralTE_experiment/novel_TE/rice/tir_work/RC/novel_tir.RC.gff'
+    # #chromosomes = [f'Chr{i}' for i in range(1, 13)]
+    # chromosomes = [f'chr_{i}' for i in range(0, 100)]
+    # rice_gff = '/home/hukang/NeuralTE_experiment/novel_TE/maize/RC/novel_tir.gff.bak'
+    # rice_RepeatClassifier_gff = '/home/hukang/NeuralTE_experiment/novel_TE/maize/RC/novel_tir.RC.gff'
     # generate_predict_gff(rice_gff, rice_RepeatClassifier_gff, RC_name_labels, chromosomes)
-    # total_genome_len = 374424240
-    # work_dir = '/home/hukang/NeuralTE_experiment/novel_TE/rice/tir_work/RC'
+    # #total_genome_len = 374424240
+    # total_genome_len = 2182786008
+    # work_dir = '/home/hukang/NeuralTE_experiment/novel_TE/maize/RC'
     # analyze_class_ratio_gff(rice_RepeatClassifier_gff, work_dir, total_genome_len)
 
-    # # #识别每一种superfamily，存成文件
-    # work_dir = '/home/hukang/NeuralTE_experiment/novel_TE/rice/tir_work'
-    # consensus_path = work_dir + '/novel_tir.fa'
-    # names, contigs = read_fasta(consensus_path)
+
+
+    # #识别每一种superfamily，存成文件
+    work_dir = '/home/hukang/NeuralTE_experiment/novel_TE/maize'
+    consensus_path = work_dir + '/novel_tir.fa'
+    names, contigs = read_fasta(consensus_path)
+
+    classified_info = work_dir + '/classified.info'
+    name_label_dict = {}
+    label_nums = {}
+    with open(classified_info, 'r') as f_r:
+        for line in f_r:
+            if line.startswith('#'):
+                continue
+            parts = line.replace('\n', '').split(',')
+            raw_name = parts[0]
+            label = parts[2]
+            name_label_dict[raw_name] = label
+            if not label_nums.__contains__(label):
+                label_nums[label] = 0
+            num = label_nums[label]
+            label_nums[label] = num + 1
+    print(label_nums)
+    RC_name_labels = name_label_dict
     #
-    # classified_info = work_dir + '/classified.info'
-    # name_label_dict = {}
-    # label_nums = {}
-    # with open(classified_info, 'r') as f_r:
-    #     for line in f_r:
-    #         if line.startswith('#'):
-    #             continue
-    #         parts = line.replace('\n', '').split(',')
-    #         raw_name = parts[0]
-    #         label = parts[2]
-    #         name_label_dict[raw_name] = label
-    #         if not label_nums.__contains__(label):
-    #             label_nums[label] = 0
-    #         num = label_nums[label]
-    #         label_nums[label] = num + 1
-    # print(label_nums)
-    # RC_name_labels = name_label_dict
-    #
-    # chromosomes = [f'Chr{i}' for i in range(1, 13)]
+    # #chromosomes = [f'Chr{i}' for i in range(1, 13)]
+    # chromosomes = [f'chr_{i}' for i in range(0, 100)]
     # rice_gff = work_dir + '/novel_tir.gff.bak'
     # rice_NeuralTE_gff = work_dir + '/novel_tir.NeuralTE.gff'
     # generate_predict_gff(rice_gff, rice_NeuralTE_gff, RC_name_labels, chromosomes)
-    # total_genome_len = 374424240
+    # # total_genome_len = 374424240
+    # total_genome_len = 2182786008
     # NeuralTE_work_dir = work_dir + '/NeuralTE'
     # analyze_class_ratio_gff(rice_NeuralTE_gff, NeuralTE_work_dir, total_genome_len)
     #
@@ -1689,14 +1720,30 @@ if __name__ == '__main__':
     #     tir_path = work_dir + '/'+type+'.fa'
     #     analyz_TIR_insert_time(tir_path, work_dir, miu, type, colors[i])
     #
-    # # 将RepeatMasker的注释转为bed文件，并过滤掉非全长TE
-    # RMOut = work_dir + '/novel_tir.out'
-    # out_bed = work_dir + '/novel_tir.full_length.bed'
-    # consensus_path = work_dir + '/novel_tir.fa'
-    # tools_dir = config.project_dir + '/tools'
-    # coverage_threshold = 0.95
-    # transfer_RMOut2Bed(RMOut, out_bed, consensus_path, tools_dir, coverage_threshold, RC_name_labels)
-    #
+    # 将RepeatMasker的注释转为bed文件，并过滤掉非全长TE
+    RMOut = work_dir + '/novel_tir.out'
+    out_bed = work_dir + '/novel_tir.full_length.bed'
+    consensus_path = work_dir + '/novel_tir.fa'
+    tools_dir = config.project_dir + '/tools'
+    coverage_threshold = 0.95
+    transfer_RMOut2Bed(RMOut, out_bed, consensus_path, tools_dir, coverage_threshold, RC_name_labels)
+
+    # # 存储基因组染色体长度
+    # genome_path = '/home/hukang/Genome/GCF_902167145.1_Zm-B73-REFERENCE-NAM-5.0_genomic.rename.fna'
+    # chromosomes = [f'Chr{i}' for i in range(1, 11)]
+    # names, contigs = read_fasta(genome_path)
+    # genome_len_info = work_dir + '/Genome_len.chr'
+    # with open(genome_len_info, 'w') as f_save:
+    #     f_save.write('Genome Length\n')
+    #     for name in names:
+    #         index = int(name.split('_')[1])
+    #         new_name = 'Chr' + str(index+1)
+    #         if new_name not in chromosomes:
+    #             continue
+    #         chr_len = len(contigs[name])
+    #         f_save.write(new_name + '\t' + str(chr_len) + '\n')
+
+
     # # 存储基因组染色体长度
     # genome_path = '/home/hukang/Genome/Oryza_sativa.IRGSP-1.0.dna.toplevel.fa'
     # chromosomes = [f'Chr{i}' for i in range(1, 13)]
@@ -1711,12 +1758,170 @@ if __name__ == '__main__':
     #         chr_len = len(contigs[name])
     #         f_save.write(new_name+'\t'+str(chr_len)+'\n')
 
-    file_path = '/home/hukang/NeuralTE_dataset/Repbase_raw/all_repbase.ref.raw'
-    names, contigs = read_fasta_v1(file_path)
-    count = 0
-    for name in names:
-        parts = name.split('\t')
-        seq_len = len(contigs[name])
-        if seq_len < 80:
-            del contigs[name]
-    store_fasta(contigs, file_path)
+    # file_path = '/home/hukang/NeuralTE_dataset/Repbase_raw/all_repbase.ref.raw'
+    # names, contigs = read_fasta_v1(file_path)
+    # count = 0
+    # for name in names:
+    #     parts = name.split('\t')
+    #     seq_len = len(contigs[name])
+    #     if seq_len < 80:
+    #         del contigs[name]
+    # store_fasta(contigs, file_path)
+
+
+    # # 新增实验，在水稻上分析RepeatClassifier和NeuralTE分类标签数量交叉
+    # work_dir = '/home/hukang/NeuralTE_experiment/Dataset6'
+    # NeuralTE_results = work_dir + '/classified.info'
+    # RC_results = work_dir + '/RC/test.ref.classified'
+    #
+    # rmToWicker = {}
+    # wicker_superfamily_set = set()
+    # with open(config.project_dir + '/data/TEClasses.tsv', 'r') as f_r:
+    #     for i, line in enumerate(f_r):
+    #         parts = line.split('\t')
+    #         rm_type = parts[5]
+    #         rm_subtype = parts[6]
+    #         repbase_type = parts[7]
+    #         wicker_type = parts[8]
+    #         wicker_type_parts = wicker_type.split('/')
+    #         # print(rm_type + ',' + rm_subtype + ',' + repbase_type + ',' + wicker_type)
+    #         if len(wicker_type_parts) != 3:
+    #             continue
+    #         wicker_superfamily_parts = wicker_type_parts[-1].strip().split(' ')
+    #         if len(wicker_superfamily_parts) == 1:
+    #             wicker_superfamily = wicker_superfamily_parts[0]
+    #         elif len(wicker_superfamily_parts) > 1:
+    #             wicker_superfamily = wicker_superfamily_parts[1].replace('(', '').replace(')', '')
+    #         rm_full_type = rm_type + '/' + rm_subtype
+    #         if wicker_superfamily == 'ERV':
+    #             wicker_superfamily = 'Retrovirus'
+    #         if wicker_superfamily == 'Viper':
+    #             wicker_superfamily = 'VIPER'
+    #         if wicker_superfamily == 'H':
+    #             wicker_superfamily = 'Helitron'
+    #         rmToWicker[rm_full_type] = wicker_superfamily
+    #         wicker_superfamily_set.add(wicker_superfamily)
+    # # Supplement some elements
+    # rmToWicker['LINE/R2'] = 'R2'
+    # rmToWicker['LINE/Tad1'] = 'I'
+    # rmToWicker['LINE?/L1'] = 'L1'
+    # rmToWicker['LINE/CR1'] = 'I'
+    # rmToWicker['DNA/PIF'] = 'PIF-Harbinger'
+    # rmToWicker['SINE/ID'] = 'tRNA'
+    # rmToWicker['SINE/MIR'] = 'tRNA'
+    # rmToWicker['SINE/tRNA-Deu-I'] = 'tRNA'
+    # rmToWicker['DNA/CMC'] = 'CACTA'
+    # rmToWicker['DNA?/hAT'] = 'hAT'
+    # rmToWicker['LTR/ERVL'] = 'Retrovirus'
+    # rmToWicker['LINE/R2-NeSL'] = 'R2'
+    # rmToWicker['DNA/Zator'] = 'Tc1-Mariner'
+    # rmToWicker['Unknown'] = 'Unknown'
+    #
+    # print(rmToWicker)
+    # print(wicker_superfamily_set)
+    # print(len(wicker_superfamily_set))
+    #
+    # # As the dataset lacks these four types: Ngaro, VIPER, Maverick, and PiggyBac,
+    # # instances predicted as these categories are marked as Unknown
+    # filter_labels = ('Ngaro', 'VIPER', 'Maverick', 'PiggyBac')
+    #
+    # ## 2.3 Retrieve labels classified by RepeatClassifier; for labels that didn't
+    # # annotate to the superfamily or were incorrect, label them as Unknown
+    # # (as our dataset labels are at the superfamily level)
+    # names, contigs = read_fasta_v1(RC_results)
+    # RC_name_labels = {}
+    # all_unique_RM_label = set()
+    # for name in names:
+    #     label = name.split('#')[1].split(' ')[0]
+    #     if not rmToWicker.__contains__(label):
+    #         all_unique_RM_label.add(label)
+    #         label = 'Unknown'
+    #     else:
+    #         wicker_superfamily = rmToWicker[label]
+    #         label = wicker_superfamily
+    #         if label in filter_labels:
+    #             label = 'Unknown'
+    #         all_unique_RM_label.add(label)
+    #     RC_name_labels[name.split('#')[0]] = label
+    # print('all_unique_RM_label:' + str(all_unique_RM_label))
+    # print(RC_name_labels)
+    #
+    # NeuralTE_name_labels = {}
+    # with open(NeuralTE_results, 'r') as f_r:
+    #     for line in f_r:
+    #         if line.startswith('#'):
+    #             continue
+    #         line = line.replace('\n', '')
+    #         parts = line.split(',')
+    #         raw_name = parts[0]
+    #         gold_standard = parts[1]
+    #         label = parts[2]
+    #         NeuralTE_name_labels[raw_name] = (gold_standard, label)
+    #
+    # # 1.金标准、RC、NeuralTE共有
+    # count1 = 0
+    # # 2. 金标准与RC共有、NeuralTE不同
+    # count2 = 0
+    # # 3. 金标准与NeuralTE共有、RC不同
+    # count3 = 0
+    # # 4. RC与NeuralTE共有、金标准不同
+    # count4 = 0
+    # # 5. 金标准、RC、NeuralTE均不相同
+    # count5 = 0
+    # # 6. 金标准与RC和NeuralTE均不相同
+    # count6 = 0
+    # # 7. RC与金标准和NeuralTE都不同
+    # count7 = 0
+    # # 8. NeuralTE 与金标准和 RC 都不同
+    # count8 = 0
+    # for raw_name in NeuralTE_name_labels.keys():
+    #     gold_standard, NeuralTE_label = NeuralTE_name_labels[raw_name]
+    #     RC_label = RC_name_labels[raw_name]
+    #     if gold_standard == NeuralTE_label and gold_standard == RC_label:
+    #         count1 += 1
+    #     elif gold_standard == RC_label and gold_standard != NeuralTE_label:
+    #         count2 += 1
+    #     elif gold_standard != RC_label and gold_standard == NeuralTE_label:
+    #         count3 += 1
+    #     elif gold_standard != RC_label and gold_standard != NeuralTE_label and NeuralTE_label == RC_label:
+    #         count4 += 1
+    #     elif gold_standard != RC_label and gold_standard != NeuralTE_label and NeuralTE_label != RC_label:
+    #         count5 += 1
+    #
+    #     if gold_standard != RC_label and gold_standard != NeuralTE_label:
+    #         count6 += 1
+    #     if RC_label != gold_standard and RC_label != NeuralTE_label:
+    #         count7 += 1
+    #     if NeuralTE_label != gold_standard and NeuralTE_label != RC_label:
+    #         count8 += 1
+    # print('总共数量:' + str(len(NeuralTE_name_labels)))
+    # print('金标准、RC、NeuralTE共有:' + str(count1))
+    # print('金标准与RC共有、NeuralTE不同:' + str(count2))
+    # print('金标准与NeuralTE共有、RC不同:' + str(count3))
+    # print('RC与NeuralTE共有、金标准不同:' + str(count4))
+    # print('金标准、RC、NeuralTE均不相同:' + str(count5))
+    # print('金标准与RC和NeuralTE均不相同:' + str(count6))
+    # print('RC与金标准和NeuralTE都不同:' + str(count7))
+    # print('NeuralTE与金标准和RC都不同:' + str(count8))
+    #
+    # import matplotlib.pyplot as plt
+    # from matplotlib_venn import venn3
+    #
+    # # 输入数据
+    # venn_labels = {'100': 4, '010': 99, '001': 20, '110': 17, '101': 96, '011': 1, '111': 1198}
+    #
+    # # 画韦恩图
+    # venn_diagram = venn3(subsets=(1, 1, 1, 1, 1, 1, 1), set_labels=('Gold Standard', 'RepeatClassifier', 'NeuralTE'))
+    # venn_diagram.get_label_by_id('100').set_text(venn_labels['100'])
+    # venn_diagram.get_label_by_id('010').set_text(venn_labels['010'])
+    # venn_diagram.get_label_by_id('001').set_text(venn_labels['001'])
+    # venn_diagram.get_label_by_id('110').set_text(venn_labels['110'])
+    # venn_diagram.get_label_by_id('101').set_text(venn_labels['101'])
+    # venn_diagram.get_label_by_id('011').set_text(venn_labels['011'])
+    # venn_diagram.get_label_by_id('111').set_text(venn_labels['111'])
+    # output_fig = '/home/hukang/NeuralTE_experiment/Dataset5/cross_num.png'
+    # # 显示图形
+    # plt.tight_layout()
+    # # 显示图形
+    # # plt.show()
+    # plt.savefig(output_fig, format='png')

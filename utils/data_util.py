@@ -465,7 +465,8 @@ def transfer_RMOut2Bed(RMOut, out_bed, consensus_path, tools_dir, coverage_thres
     with open(bed_file, 'r') as f_r:
         for line in f_r:
             parts = line.split('\t')
-            query_name = 'Chr'+parts[0]
+            # query_name = 'Chr'+parts[0]
+            query_name = 'Chr'+str(int(parts[0].split('_')[1]) + 1)
             q_start = parts[1]
             q_end = parts[2]
             subject_info = parts[3]
