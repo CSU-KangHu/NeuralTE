@@ -64,11 +64,12 @@ Please refer to `NeuralTE/demo` for some demo data to play with:
 
 ```sh
 # 1.Classify TE library without genome
-# inputs: 
+# Inputs: 
 #       --data: TE library to be classified.
-#       --model_path: Pre-trained Neural TE model without using TSDs features.
-#       --outdir: Output directory. The `--outdir` should not be the same as the directory where the `--data` file is located.
-# outputs: 
+#       --model_path: Pre-trained NeuralTE model without using TSDs features.
+#       --outdir: Output directory. The `--outdir` should not be the same as the directory 
+#                 where the `--data` file is located.
+# Outputs: 
 #       classified.info: Classification labels corresponding to TE names.
 #       classified_TE.fa: Classified TE library.
 python ${pathTo}/NeuralTE/src/Classifier.py \
@@ -76,7 +77,8 @@ python ${pathTo}/NeuralTE/src/Classifier.py \
  --model_path ${pathTo}/NeuralTE/models/NeuralTE_model.h5 \
  --outdir ${outdir} \
  --thread ${threads_num}
- # e.g., my command: python /home/hukang/NeuralTE/src/Classifier.py \
+ # e.g., my command: 
+ # python /home/hukang/NeuralTE/src/Classifier.py \
  # --data /home/hukang/NeuralTE/demo/test.fa \
  # --model_path /home/hukang/NeuralTE/models/NeuralTE_model.h5 \
  # --outdir /home/hukang/NeuralTE/work \
@@ -97,7 +99,8 @@ python ${pathTo}/NeuralTE/src/Classifier.py \
  --model_path ${pathTo}/NeuralTE/models/NeuralTE-TSDs_model.h5 \
  --outdir ${outdir} \
  --thread ${threads_num}
- # e.g., my command: python /home/hukang/NeuralTE/src/Classifier.py \
+ # e.g., my command: 
+ # python /home/hukang/NeuralTE/src/Classifier.py \
  # --data /home/hukang/NeuralTE/demo/test.fa \
  # --genome /home/hukang/NeuralTE/demo/genome.fa \
  # --use_TSD 1 \
@@ -122,7 +125,8 @@ python ${pathTo}/NeuralTE/src/Classifier.py \
 python ${pathTo}/utils/preprocess_repbase.py \
  --repbase_dir ${pathTo}/RepBase*.fasta \
  --out_dir ${out_dir}
- # e.g., my command: python /home/hukang/NeuralTE/utils/preprocess_repbase.py \
+ # e.g., my command: 
+ # python /home/hukang/NeuralTE/utils/preprocess_repbase.py \
  # --repbase_dir /home/hukang/RepBase28.06.fasta/ \
  # --out_dir /home/hukang/test/
  
@@ -139,7 +143,8 @@ python ${pathTo}/utils/split_train_test.py \
  --data_path ${pathTo}/all_repbase.ref \
  --out_dir ${out_dir} \
  --ratio 0.8
- # e.g., my command: python /home/hukang/NeuralTE/utils/split_train_test.py \
+ # e.g., my command: 
+ # python /home/hukang/NeuralTE/utils/split_train_test.py \
  # --data_path /home/hukang/test/all_repbase.ref \
  # --out_dir /home/hukang/test/ \
  # --ratio 0.8
@@ -156,7 +161,8 @@ python ${pathTo}/NeuralTE/src/Trainer.py \
  --is_predict 0 \
  --outdir ${outdir} \
  --thread ${threads_num}
- # e.g., my command: python /home/hukang/NeuralTE/src/Trainer.py \
+ # e.g., my command: 
+ # python /home/hukang/NeuralTE/src/Trainer.py \
  # --data /home/hukang/NeuralTE/data/train.ref \
  # --is_train 1 \
  # --is_predict 0 \
@@ -181,7 +187,8 @@ python ${pathTo}/NeuralTE/src/Trainer.py \
  --use_TSD 1 \
  --outdir ${outdir} \
  --thread ${threads_num}
- # e.g., my command: python /home/hukang/NeuralTE/src/Trainer.py \
+ # e.g., my command: 
+ # python /home/hukang/NeuralTE/src/Trainer.py \
  # --data /home/hukang/NeuralTE/data/train.ref \
  # --genome /home/hukang/NeuralTE/data/genome.info \
  # --is_train 1 \
