@@ -4,6 +4,7 @@
 [![Conda](https://img.shields.io/badge/Conda-support-yellow)](https://docs.conda.io/en/latest/)
 
 `NeuralTE` uses a Convolutional Neural Network (CNN) to classify transposable elements (TEs) at the **superfamily** level, based on the **sequence** and **structural features** of transposons.
+
 It is recommended that the TE library to be classified consists of full-length TEs. Many TE libraries often  divide LTR retrotransposons into terminal and internal sequences, such as `Copia-62_PHord-LTR` and `Copia-62_PHord-I` in Repbase, and we suggest restoring them to full-length LTRs before classification. 
 
 We recommend using [HiTE](https://github.com/CSU-KangHu/HiTE) for generating full-length TE libraries, as it has the capability to identify more full-length TEs, including novel ones.
@@ -41,19 +42,19 @@ Recommended Hardware requirements: 40 CPU processors, 128 GB RAM.
 Recommended OS: (Ubuntu 16.04, CentOS 7, etc.)
 
 ```sh
-git clone https://github.com/CSU-KangHu/NeuralTE.git
-# Alternatively, you can download the zip file directly from the repository.
+git clone https://github.com/CSU-KangHu/NeuralTE.git # Alternatively, you can download the zip file directly from the repository.
 cd NeuralTE
 chmod +x tools/*
 
 conda env create --name NeuralTE -f environment.yml
+conda activate NeuralTE
 ```
 
 ## <a name="models"></a>Pre-trained models
 See [models](/models):
-* [NeuralTE model](/models/NeuralTE_model.h5): model of NeuralTE uses sequence k-mer, terminal, TE domain, and 5bp terminal features, trained using Repbase version 28.06. 
-* [NeuralTE-TSDs model](/models/NeuralTE-TSDs_model.h5): model of NeuralTE uses sequence k-mer, terminal, TE domain, 5bp terminal, and **target site duplications (TSDs)** features, trained using partial species data (493 species) from Repbase version 28.06. This model needs to be used with the corresponding genome of the species.
+* [NeuralTE model](/models/NeuralTE_model.h5): This model employs features such as k-mer occurrences, terminals, TE domain, and 5bp terminals, trained using Repbase version 28.06.
 
+* [NeuralTE-TSDs model](/models/NeuralTE-TSDs_model.h5): This model incorporates features like k-mer occurrences, terminals, TE domain, 5bp terminals, and **target site duplications (TSDs)**. It was trained using partial species data (493 species) from Repbase version 28.06. Please note that this model should be used in conjunction with the corresponding genome assembly of the species.
 
 ## <a name="demo"></a>Demo data
 
@@ -292,7 +293,7 @@ optional arguments:
   --terminal_kmer_sizes terminal_kmer_sizes
                         The k-mer size used to convert terminal sequences to k-mer frequency features, default = [ [3, 4] ]
 ```
-#### 2. train a new model
+#### 2. Train a new model
 ```shell
 uusage: Trainer.py [-h] --data data --outdir output_dir --use_TSD use_TSD --is_train is_train --is_predict is_predict [--only_preprocess only_preprocess] [--keep_raw keep_raw] [--genome genome] [--use_kmers use_kmers] [--use_terminal use_terminal]
                   [--use_minority use_minority] [--use_domain use_domain] [--use_ends use_ends] [--threads thread_num] [--internal_kmer_sizes internal_kmer_sizes] [--terminal_kmer_sizes terminal_kmer_sizes] [--cnn_num_convs cnn_num_convs]
