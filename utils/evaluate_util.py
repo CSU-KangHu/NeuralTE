@@ -1,6 +1,8 @@
 import codecs
 import json
 import os.path
+import re
+
 import matplotlib
 #matplotlib.use('pdf')
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, \
@@ -74,6 +76,7 @@ def get_metrics(y_pred, y_test, seq_names, data_path):
             new_class = predicted_classes[i]
         predicted_classes_list.append(new_class)
 
+    SegLTR2intactLTRMap = config.work_dir + '/segLTR2intactLTR.map'
     if seq_names is not None:
         seqName2PredictLabel = {}
         for i in range(0, len(predicted_classes_list)):
@@ -86,7 +89,6 @@ def get_metrics(y_pred, y_test, seq_names, data_path):
                 seqName2PredictLabel[seq_name] = (true_label, 'Unknown')
 
         # Read the correspondence between intactLTR and fragmentLTR names, replace intactLTR with fragmentLTR
-        SegLTR2intactLTRMap = config.work_dir + '/segLTR2intactLTR.map'
         SegLTR2intactLTR = {}
         try:
             with open(SegLTR2intactLTRMap, 'r') as f_r:
@@ -131,7 +133,10 @@ def get_metrics(y_pred, y_test, seq_names, data_path):
         store_fasta(classified_contigs, classified_data)
 
         with open(config.work_dir + '/classified.info', 'w+') as opt:
-            opt.write('#Seq_Name, True_Label, Predict_Label' + '\n')
+            if config.is_debug:
+                opt.write('#Seq_Name,True_Label,Predict_Label' + '\n')
+            else:
+                opt.write('#Seq_Name,Predict_Label' + '\n')
             for name in orig_names:
                 name = name.split('/')[0].split('#')[0]
                 map_name = name
@@ -141,7 +146,28 @@ def get_metrics(y_pred, y_test, seq_names, data_path):
                 true_label = seqName2PredictLabel[map_name][0]
                 if not config.is_wicker:
                     predict_label = wicker2RM[predict_label]
-                opt.write(name + ',' + true_label + ',' + predict_label + '\n')
+                if config.is_debug:
+                    opt.write(name + ',' + true_label + ',' + predict_label + '\n')
+                else:
+                    opt.write(name + ',' + predict_label + '\n')
+
+    # remove temp files
+    if not config.is_debug:
+        all_files = os.listdir(config.work_dir)
+        for filename in all_files:
+            is_del = True
+            for non_temp_file in config.non_temp_files:
+                is_match = re.match(non_temp_file + '$', filename)
+                if is_match is not None:
+                    is_del = False
+                    break
+            if is_del:
+                os.system('rm -rf ' + config.work_dir + '/' + filename)
+
+
+        if os.path.exists(SegLTR2intactLTRMap):
+            os.remove(SegLTR2intactLTRMap)
+
     accuracy = 0
     precision = 0
     recall = 0

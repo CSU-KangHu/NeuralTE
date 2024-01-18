@@ -29,7 +29,7 @@ tf.get_logger().setLevel('ERROR')
 # # print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
 
 
-# Prepare a directory to store all the checkpoints.
+# # Prepare a directory to store all the checkpoints.
 checkpoint_dir = "./ckpt"
-if not os.path.exists(checkpoint_dir):
-    os.makedirs(checkpoint_dir)
+# if not os.path.exists(checkpoint_dir):
+#     os.makedirs(checkpoint_dir)

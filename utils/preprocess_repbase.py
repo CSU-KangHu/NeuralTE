@@ -235,7 +235,9 @@ def main():
 
     repbase_dir = os.path.realpath(repbase_dir)
     out_dir = os.path.realpath(out_dir)
-    repbase_path = out_dir + '/all_repbase.ref'
+    config.work_dir = out_dir
+
+    repbase_path = config.work_dir + '/all_repbase.ref'
 
     # 1. Merge all Repbase files under the Repbase directory, retaining only sequences with headers in the format seq_name\tlabel\tspecies_name
     # 2. Retain sequences that can be converted to Wicker superfamily labels; it's difficult to determine the superfamily category for other sequences

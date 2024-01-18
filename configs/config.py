@@ -25,6 +25,8 @@ only_preprocess = 0 # Whether to only perform data preprocessing
 is_predict = 1  # Enable prediction mode. Setting to 0 requires the input FASTA file to be in Repbase format (seq_name\tLabel\tspecies).
 is_wicker = 1   # Use Wicker classification labels. Setting to 0 will output RepeatMasker classification labels.
 is_plant = 0 # Is the input genome of a plant? 0 represents non-plant, while 1 represents plant.
+is_debug = 0 # Is debug mode
+
 
 # 2. Program and model parameters
 threads = int(cpu_count())  # Use multi-threading to load data
@@ -44,6 +46,8 @@ use_checkpoint = 0  # Whether to use checkpoint training; set to 1 to resume tra
 ################################################### The following parameters do not need modification ######################################################################
 version_num = '1.0.0'
 work_dir = project_dir + '/work' # temp work directory
+
+non_temp_files = ['classified\.info', 'classified_TE\.fa', '.*\.domain']
 
 # minority sample labels
 #minority_labels_class = {'Crypton': 0, '5S': 1, '7SL': 2, 'Merlin': 3, 'P': 4, 'R2': 5, 'Unknown': 6}

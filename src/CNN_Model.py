@@ -101,6 +101,11 @@ class CNN_Model:
         return self.model.predict(X)
 
     def build_model(self, cnn_num_convs, cnn_filters_array):
+        # Prepare a directory to store all the checkpoints.
+        checkpoint_dir = config.work_dir + "/ckpt"
+        if not os.path.exists(checkpoint_dir):
+            os.makedirs(checkpoint_dir)
+
         # construct model
         if config.use_checkpoint == 0:
             os.system('cd ' + gpu_config.checkpoint_dir + ' && rm -rf ckpt*')

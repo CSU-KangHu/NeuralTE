@@ -153,7 +153,7 @@ python ${pathTo}/utils/preprocess_repbase.py \
 #        train.ref: 80% of all Repbase database sequences for training
 #        test.ref: 20% of all Repbase database sequences for testing
 python ${pathTo}/utils/split_train_test.py \
- --data_path ${pathTo}/all_repbase.ref \
+ --data_path ${Step0_out_dir}/all_repbase.ref \
  --out_dir ${out_dir} \
  --ratio 0.8
  # e.g., my command: 
@@ -169,9 +169,10 @@ python ${pathTo}/utils/split_train_test.py \
  # Outputs: 
  #        model_${time}.h5: Generate h5 format file in the ${pathTo}/NeuralTE/models directory
 python ${pathTo}/NeuralTE/src/Trainer.py \
- --data ${pathTo}/train.ref \
+ --data ${Step1_out_dir}/train.ref \
  --is_train 1 \
  --is_predict 0 \
+ --use_TSD 0 \
  --outdir ${outdir} \
  --thread ${threads_num}
  # e.g., my command: 
@@ -179,6 +180,7 @@ python ${pathTo}/NeuralTE/src/Trainer.py \
  # --data /home/hukang/NeuralTE/data/train.ref \
  # --is_train 1 \
  # --is_predict 0 \
+ # --use_TSD 0 \
  # --outdir /home/hukang/NeuralTE/work \
  # --thread 40
  
@@ -193,7 +195,7 @@ python ${pathTo}/NeuralTE/src/Trainer.py \
  # Outputs: 
  #        model_${time}.h5: Generate h5 format file in the ${pathTo}/NeuralTE/models directory
 python ${pathTo}/NeuralTE/src/Trainer.py \
- --data ${pathTo}/train.ref \
+ --data ${Step1_out_dir}/train.ref \
  --genome ${pathTo}/NeuralTE/data/genome.info \
  --is_train 1 \
  --is_predict 0 \
