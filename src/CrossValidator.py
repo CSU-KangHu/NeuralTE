@@ -10,12 +10,13 @@ sys.path.append(configs_folder)
 import numpy as np
 from sklearn.model_selection import StratifiedShuffleSplit
 from keras.utils import np_utils
-from configs import config
+from configs import config, gpu_config
 from CNN_Model import CNN_Model
 from DataProcessor import DataProcessor
 from utils.evaluate_util import get_metrics
 from utils.show_util import showToolName
-from utils.data_util import get_feature_len
+from utils.data_util import get_feature_len, get_gpu_config
+
 
 class CrossValidator:
     def __init__(self, num_folds=5):
@@ -88,6 +89,8 @@ def main():
     parser.add_argument('--use_ends', metavar='use_ends', help='Whether to use 5-bp terminal ends features, 1: true, 0: false. default = [ ' + str(config.use_ends) + ' ]')
     parser.add_argument('--is_predict', metavar='is_predict', help='Enable prediction mode, 1: true, 0: false. default = [ ' + str(config.is_predict) + ' ]')
     parser.add_argument('--threads', metavar='thread_num', help='Input thread num, default = [ ' + str(config.threads) + ' ]')
+    parser.add_argument('--start_gpu_num', metavar='start_gpu_num', help='The starting index for using GPUs. default = [ ' + str(gpu_config.start_gpu_num) + ' ]')
+    parser.add_argument('--use_gpu_num', metavar='use_gpu_num', help='Specifying the number of GPUs in use. default = [ ' + str(gpu_config.use_gpu_num) + ' ]')
 
     args = parser.parse_args()
 
@@ -100,6 +103,8 @@ def main():
     use_ends = args.use_ends
     is_predict = args.is_predict
     threads = args.threads
+    start_gpu_num = args.start_gpu_num
+    use_gpu_num = args.use_gpu_num
 
     if outdir is not None:
         config.work_dir = outdir
@@ -117,9 +122,16 @@ def main():
         config.is_predict = int(is_predict)
     if threads is not None:
         config.threads = int(threads)
+    if start_gpu_num is not None:
+        gpu_config.start_gpu_num = int(start_gpu_num)
+    if use_gpu_num is not None:
+        gpu_config.use_gpu_num = int(use_gpu_num)
 
     X_feature_len = get_feature_len()
     config.X_feature_len = X_feature_len
+
+    # reload GPU config
+    get_gpu_config(gpu_config.start_gpu_num, gpu_config.use_gpu_num)
 
     # Instantiate the DataProcessor class
     data_processor = DataProcessor()

@@ -136,7 +136,7 @@ python ${pathTo}/NeuralTE/src/Classifier.py \
 # Outputs:
 #        all_repbase.ref: Merged sequence of all Repbase databases
 python ${pathTo}/utils/preprocess_repbase.py \
- --repbase_dir ${pathTo}/RepBase*.fasta \
+ --repbase_dir ${pathTo}/RepBase${version}.fasta \
  --out_dir ${out_dir}
  # e.g., my command: 
  # python /home/hukang/NeuralTE/utils/preprocess_repbase.py \
