@@ -12,11 +12,11 @@ sys.path.append(configs_folder)
 
 import numpy as np
 from keras.utils import np_utils
-from configs import config
+from configs import config, gpu_config
 from CNN_Model import CNN_Model
 from DataProcessor import DataProcessor
 from utils.show_util import showToolName, showTrainParams
-from utils.data_util import get_feature_len
+from utils.data_util import get_feature_len, get_gpu_config
 import datetime
 
 
@@ -54,6 +54,8 @@ def main():
     parser.add_argument('--is_train', required=True, metavar='is_train', help='Enable train mode, 1: true, 0: false. default = [ ' + str(config.is_train) + ' ]')
     parser.add_argument('--is_predict', required=True, metavar='is_predict', help='Enable prediction mode, 1: true, 0: false. default = [ ' + str(config.is_predict) + ' ]')
 
+    parser.add_argument('--start_gpu_num', metavar='start_gpu_num', help='The starting index for using GPUs. default = [ ' + str(gpu_config.start_gpu_num) + ' ]')
+    parser.add_argument('--use_gpu_num', metavar='use_gpu_num', help='Specifying the number of GPUs in use. default = [ ' + str(gpu_config.use_gpu_num) + ' ]')
     parser.add_argument('--only_preprocess', metavar='only_preprocess', help='Whether to only perform data preprocessing, 1: true, 0: false.')
     parser.add_argument('--keep_raw', metavar='keep_raw', help='Whether to retain the raw input sequence, 1: true, 0: false; only save species having TSDs. default = [ ' + str(config.keep_raw) + ' ]')
     parser.add_argument('--genome', metavar='genome', help='Genome path, use to search for TSDs')
@@ -87,6 +89,9 @@ def main():
     use_ends = args.use_ends
     is_train = args.is_train
     only_preprocess = args.only_preprocess
+
+    start_gpu_num = args.start_gpu_num
+    use_gpu_num = args.use_gpu_num
     keep_raw = args.keep_raw
     is_predict = args.is_predict
     threads = args.threads
@@ -116,6 +121,11 @@ def main():
         config.use_ends = int(use_ends)
     if is_train is not None:
         config.is_train = int(is_train)
+
+    if start_gpu_num is not None:
+        gpu_config.start_gpu_num = int(start_gpu_num)
+    if use_gpu_num is not None:
+        gpu_config.use_gpu_num = int(use_gpu_num)
     if keep_raw is not None:
         config.keep_raw = int(keep_raw)
     if only_preprocess is not None:
@@ -159,8 +169,12 @@ def main():
     params['genome'] = genome
     showTrainParams(params)
 
+    # re-compute feature length
     X_feature_len = get_feature_len()
     config.X_feature_len = X_feature_len
+
+    # reload GPU config
+    get_gpu_config(gpu_config.start_gpu_num, gpu_config.use_gpu_num)
 
     starttime1 = time.time()
     # Instantiate the DataProcessor class

@@ -16,8 +16,7 @@ from configs import config
 from configs import gpu_config
 from DataProcessor import DataProcessor
 from utils.evaluate_util import get_metrics, correct_using_minority
-from utils.data_util import get_feature_len
-
+from utils.data_util import get_feature_len, get_gpu_config
 
 
 class Classifier:
@@ -44,6 +43,8 @@ def main():
     parser.add_argument('--use_TSD', metavar='use_TSD', help='Whether to use TSD features, 1: true, 0: false. default = [ ' + str(config.use_TSD) + ' ]')
     parser.add_argument('--is_predict', metavar='is_predict', help='Enable prediction mode, 1: true, 0: false. default = [ ' + str(config.is_predict) + ' ]')
 
+    parser.add_argument('--start_gpu_num', metavar='start_gpu_num', help='The starting index for using GPUs. default = [ ' + str(gpu_config.start_gpu_num) + ' ]')
+    parser.add_argument('--use_gpu_num', metavar='use_gpu_num', help='Specifying the number of GPUs in use. default = [ ' + str(gpu_config.use_gpu_num) + ' ]')
     parser.add_argument('--keep_raw', metavar='keep_raw', help='Whether to retain the raw input sequence, 1: true, 0: false; only save species having TSDs. default = [ ' + str(config.keep_raw) + ' ]')
     parser.add_argument('--genome', metavar='genome', help='Genome path, use to search for TSDs')
     parser.add_argument('--species', metavar='species', help='Which species does the TE library to be classified come from.')
@@ -74,6 +75,9 @@ def main():
     use_domain = args.use_domain
     use_ends = args.use_ends
     is_predict = args.is_predict
+
+    start_gpu_num = args.start_gpu_num
+    use_gpu_num = args.use_gpu_num
     keep_raw = args.keep_raw
     is_wicker = args.is_wicker
     threads = args.threads
@@ -96,6 +100,11 @@ def main():
         config.use_ends = int(use_ends)
     if is_predict is not None:
         config.is_predict = int(is_predict)
+
+    if start_gpu_num is not None:
+        gpu_config.start_gpu_num = int(start_gpu_num)
+    if use_gpu_num is not None:
+        gpu_config.use_gpu_num = int(use_gpu_num)
     if keep_raw is not None:
         config.keep_raw = int(keep_raw)
     if is_wicker is not None:
@@ -129,8 +138,12 @@ def main():
     params['species'] = species
     showTestParams(params)
 
+    # re-compute feature length
     X_feature_len = get_feature_len()
     config.X_feature_len = X_feature_len
+
+    # reload GPU config
+    get_gpu_config(gpu_config.start_gpu_num, gpu_config.use_gpu_num)
 
     starttime1 = time.time()
     # Instantiate the DataProcessor class

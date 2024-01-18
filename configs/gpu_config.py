@@ -9,23 +9,26 @@ import os
 import tensorflow as tf
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 tf.get_logger().setLevel('ERROR')
-# Set the GPUs you want to use
-gpus = tf.config.experimental.list_physical_devices('GPU')
-# For GPU memory growth
-for device in gpus:
-    tf.config.experimental.set_memory_growth(device, True)
-use_devices = all_devices[start_gpu_num: start_gpu_num + use_gpu_num]
-tf.config.experimental.set_visible_devices(gpus[start_gpu_num: start_gpu_num + use_gpu_num], 'GPU')
 
-# # Use CPU to train model
-# num_CPU_cores = 40
-# tf.config.threading.set_inter_op_parallelism_threads(num_CPU_cores)
-# tf.config.threading.set_intra_op_parallelism_threads(num_CPU_cores)
-# tf.config.experimental.set_visible_devices([], 'GPU')
+# # Set the GPUs you want to use
+# gpus = tf.config.experimental.list_physical_devices('GPU')
+# # For GPU memory growth
+# for device in gpus:
+#     tf.config.experimental.set_memory_growth(device, True)
+# use_devices = all_devices[start_gpu_num: start_gpu_num + use_gpu_num]
+# tf.config.experimental.set_visible_devices(gpus[start_gpu_num: start_gpu_num + use_gpu_num], 'GPU')
+#
+# # # Use CPU to train model
+# # num_CPU_cores = 40
+# # tf.config.threading.set_inter_op_parallelism_threads(num_CPU_cores)
+# # tf.config.threading.set_intra_op_parallelism_threads(num_CPU_cores)
+# # tf.config.experimental.set_visible_devices([], 'GPU')
+#
+# # Create a MirroredStrategy to use multiple GPUs
+# strategy = tf.distribute.MirroredStrategy(devices=use_devices)
+# # print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
 
-# Create a MirroredStrategy to use multiple GPUs
-strategy = tf.distribute.MirroredStrategy(devices=use_devices)
-print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
+
 # Prepare a directory to store all the checkpoints.
 checkpoint_dir = "./ckpt"
 if not os.path.exists(checkpoint_dir):

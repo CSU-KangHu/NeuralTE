@@ -13,6 +13,7 @@ For fragmented TEs, you can use [RepeatClassifier](https://github.com/Dfam-conso
 ## Table of Contents
 - [Installation](#install)
 - [Pre-trained models](#models)
+- [Specify the GPUs](#gpu)
 - [Demo data](#demo)
 - [Train a new model](#train_model)
 - [Experiment reproduction](#reproduction)
@@ -57,9 +58,14 @@ See [models](/models):
 
 * [NeuralTE-TSDs model](/models/NeuralTE-TSDs_model.h5): This model incorporates features like k-mer occurrences, terminals, TE domain, 5bp terminals, and **target site duplications (TSDs)**. It was trained using partial species data (493 species) from Repbase version 28.06. Please note that this model should be used in conjunction with the corresponding genome assembly of the species.
 
+## <a name="gpu"></a>Specify the GPUs (Skipping when using CPUs)
+Use the parameters `--start_gpu_num` and `--use_gpu_num` to specify the starting index and the number of GPUs to be used, respectively.
+For example, `--start_gpu_num 0` and `--use_gpu_num 2` indicates a total of two GPUs to be used, with the assigned GPU indices being `gpu:0` and `gpu:1`. 
+Default configurations are set in [gpu_config.py](/configs/gpu_config.py).
+
 ## <a name="demo"></a>Demo data
 
-Please refer to `NeuralTE/demo` for some demo data to play with:
+Please refer to [demo](/demo) for some demo data to play with:
 * _test.fa_: demo TE library.
 * _genome.fa_: demo genome sequence.
 
@@ -266,8 +272,9 @@ All experimental results in the manuscript of NeuralTE can be reproduced step by
 ## <a name="cmd"></a>Usage
 #### 1. Classify TE library
 ```shell
-usage: Classifier.py [-h] --data data --outdir output_dir [--use_TSD use_TSD] [--is_predict is_predict] [--keep_raw keep_raw] [--genome genome] [--species species] [--model_path model_path] [--use_kmers use_kmers] [--use_terminal use_terminal]
-                     [--use_minority use_minority] [--use_domain use_domain] [--use_ends use_ends] [--is_wicker is_wicker] [--is_plant is_plant] [--threads thread_num] [--internal_kmer_sizes internal_kmer_sizes] [--terminal_kmer_sizes terminal_kmer_sizes]
+usage: Classifier.py [-h] --data data --outdir output_dir [--use_TSD use_TSD] [--is_predict is_predict] [--start_gpu_num start_gpu_num] [--use_gpu_num use_gpu_num] [--keep_raw keep_raw] [--genome genome] [--species species] [--model_path model_path]
+                     [--use_kmers use_kmers] [--use_terminal use_terminal] [--use_minority use_minority] [--use_domain use_domain] [--use_ends use_ends] [--is_wicker is_wicker] [--is_plant is_plant] [--threads thread_num] [--internal_kmer_sizes internal_kmer_sizes]
+                     [--terminal_kmer_sizes terminal_kmer_sizes]
 
 ########################## NeuralTE, version 1.0.0 ##########################
 
@@ -278,6 +285,10 @@ optional arguments:
   --use_TSD use_TSD     Whether to use TSD features, 1: true, 0: false. default = [ 0 ]
   --is_predict is_predict
                         Enable prediction mode, 1: true, 0: false. default = [ 1 ]
+  --start_gpu_num start_gpu_num
+                        The starting index for using GPUs. default = [ 0 ]
+  --use_gpu_num use_gpu_num
+                        Specifying the number of GPUs in use. default = [ 1 ]
   --keep_raw keep_raw   Whether to retain the raw input sequence, 1: true, 0: false; only save species having TSDs. default = [ 0 ]
   --genome genome       Genome path, use to search for TSDs
   --species species     Which species does the TE library to be classified come from.
@@ -303,9 +314,9 @@ optional arguments:
 ```
 #### 2. Train a new model
 ```shell
-uusage: Trainer.py [-h] --data data --outdir output_dir --use_TSD use_TSD --is_train is_train --is_predict is_predict [--only_preprocess only_preprocess] [--keep_raw keep_raw] [--genome genome] [--use_kmers use_kmers] [--use_terminal use_terminal]
-                  [--use_minority use_minority] [--use_domain use_domain] [--use_ends use_ends] [--threads thread_num] [--internal_kmer_sizes internal_kmer_sizes] [--terminal_kmer_sizes terminal_kmer_sizes] [--cnn_num_convs cnn_num_convs]
-                  [--cnn_filters_array cnn_filters_array] [--cnn_kernel_sizes_array cnn_kernel_sizes_array] [--cnn_dropout cnn_dropout] [--batch_size batch_size] [--epochs epochs] [--use_checkpoint use_checkpoint]
+usage: Trainer.py [-h] --data data --outdir output_dir --use_TSD use_TSD --is_train is_train --is_predict is_predict [--start_gpu_num start_gpu_num] [--use_gpu_num use_gpu_num] [--only_preprocess only_preprocess] [--keep_raw keep_raw] [--genome genome]
+                  [--use_kmers use_kmers] [--use_terminal use_terminal] [--use_minority use_minority] [--use_domain use_domain] [--use_ends use_ends] [--threads thread_num] [--internal_kmer_sizes internal_kmer_sizes] [--terminal_kmer_sizes terminal_kmer_sizes]
+                  [--cnn_num_convs cnn_num_convs] [--cnn_filters_array cnn_filters_array] [--cnn_kernel_sizes_array cnn_kernel_sizes_array] [--cnn_dropout cnn_dropout] [--batch_size batch_size] [--epochs epochs] [--use_checkpoint use_checkpoint]
 
 ########################## NeuralTE, version 1.0.0 ##########################
 
@@ -317,6 +328,10 @@ optional arguments:
   --is_train is_train   Enable train mode, 1: true, 0: false. default = [ 0 ]
   --is_predict is_predict
                         Enable prediction mode, 1: true, 0: false. default = [ 1 ]
+  --start_gpu_num start_gpu_num
+                        The starting index for using GPUs. default = [ 0 ]
+  --use_gpu_num use_gpu_num
+                        Specifying the number of GPUs in use. default = [ 1 ]
   --only_preprocess only_preprocess
                         Whether to only perform data preprocessing, 1: true, 0: false.
   --keep_raw keep_raw   Whether to retain the raw input sequence, 1: true, 0: false; only save species having TSDs. default = [ 0 ]

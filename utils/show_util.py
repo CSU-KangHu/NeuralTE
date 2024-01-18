@@ -1,4 +1,5 @@
 from configs import config
+from configs import gpu_config
 
 def showToolName():
     describe_image = '\n' + \
@@ -36,6 +37,8 @@ def showTrainParams(params):
         '  [Setting] The batch size in training model = [ ' + str(config.batch_size) + ' ]\n'
         '  [Setting] The number of epochs in training model = [ ' + str(config.epochs) + ' ]\n'
         '  [Setting] Whether to use breakpoint training = [ ' + str(config.use_checkpoint) + ' ]'
+        '  [Setting] The starting index for using GPUs = [ ' + str(gpu_config.start_gpu_num) + ' ]\n'
+        '  [Setting] The number of GPUs in use = [ ' + str(gpu_config.use_gpu_num) + ' ]\n'
     )
 
 def showTestParams(params):
@@ -59,4 +62,6 @@ def showTestParams(params):
           '  [Setting] Input thread num = [ ' + str(config.threads) + ' ]'
           '  [Setting] The k-mer size used to convert internal sequences to k-mer frequency features = [ ' + str(config.internal_kmer_sizes) + ' ]\n'
           '  [Setting] The k-mer size used to convert terminal sequences to k-mer frequency features = [ ' + str(config.terminal_kmer_sizes) + ' ]\n'
+          '  [Setting] The starting index for using GPUs = [ ' + str(gpu_config.start_gpu_num) + ' ]\n'
+          '  [Setting] The number of GPUs in use = [ ' + str(gpu_config.use_gpu_num) + ' ]\n'
     )

@@ -10,6 +10,8 @@ from pandas import ExcelWriter
 import numpy as np
 import itertools
 from configs import config
+from configs import gpu_config
+import tensorflow as tf
 
 
 # Calculate the proportion of each category in the repbase file.
@@ -364,6 +366,17 @@ def get_batch_kmer_freq_v1(grouped_x, internal_kmer_sizes, terminal_kmer_sizes, 
 
         group_dict[seq_name] = connected_num_list
     return group_dict
+
+def get_gpu_config(start_gpu_num, use_gpu_num):
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    # For GPU memory growth
+    for device in gpus:
+        tf.config.experimental.set_memory_growth(device, True)
+    use_devices = gpu_config.all_devices[start_gpu_num: start_gpu_num + use_gpu_num]
+    tf.config.experimental.set_visible_devices(gpus[start_gpu_num: start_gpu_num + use_gpu_num], 'GPU')
+    # Create a MirroredStrategy to use multiple GPUs
+    strategy = tf.distribute.MirroredStrategy(devices=use_devices)
+    # print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
 
 def get_feature_len():
     # Obtain CNN input dimensions
