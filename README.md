@@ -174,7 +174,9 @@ python ${pathTo}/NeuralTE/src/Trainer.py \
  --is_predict 0 \
  --use_TSD 0 \
  --outdir ${outdir} \
- --thread ${threads_num}
+ --thread ${threads_num} \
+ --start_gpu_num ${start_gpu_num} \
+ --use_gpu_num ${use_gpu_num}
  # e.g., my command: 
  # python /home/hukang/NeuralTE/src/Trainer.py \
  # --data /home/hukang/NeuralTE/data/train.ref \
@@ -183,6 +185,8 @@ python ${pathTo}/NeuralTE/src/Trainer.py \
  # --use_TSD 0 \
  # --outdir /home/hukang/NeuralTE/work \
  # --thread 40
+ # --start_gpu_num 0 \
+ # --use_gpu_num 1
  
  # Replace original model
  cd ${pathTo}/NeuralTE/models && mv model_${time}.h5 NeuralTE_model.h5
@@ -201,7 +205,9 @@ python ${pathTo}/NeuralTE/src/Trainer.py \
  --is_predict 0 \
  --use_TSD 1 \
  --outdir ${outdir} \
- --thread ${threads_num}
+ --thread ${threads_num} \
+ --start_gpu_num ${start_gpu_num} \
+ --use_gpu_num ${use_gpu_num}
  # e.g., my command: 
  # python /home/hukang/NeuralTE/src/Trainer.py \
  # --data /home/hukang/NeuralTE/data/train.ref \
@@ -210,7 +216,9 @@ python ${pathTo}/NeuralTE/src/Trainer.py \
  # --is_predict 0 \
  # --use_TSD 1 \
  # --outdir /home/hukang/NeuralTE/work \
- # --thread 40
+ # --thread 40 \
+ # --start_gpu_num 0 \
+ # --use_gpu_num 1
  
  # Replace original model
 cd ${pathTo}/NeuralTE/models && mv model_${time}.h5 NeuralTE-TSDs_model.h5
