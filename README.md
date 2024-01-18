@@ -59,8 +59,14 @@ See [models](/models):
 * [NeuralTE-TSDs model](/models/NeuralTE-TSDs_model.h5): This model incorporates features like k-mer occurrences, terminals, TE domain, 5bp terminals, and **target site duplications (TSDs)**. It was trained using partial species data (493 species) from Repbase version 28.06. Please note that this model should be used in conjunction with the corresponding genome assembly of the species.
 
 ## <a name="gpu"></a>Specify the GPUs (Skipping when using CPUs)
-Use the parameters `--start_gpu_num` and `--use_gpu_num` to specify the starting index and the number of GPUs to be used, respectively.
+```sh
+  --start_gpu_num start_gpu_num
+                        The starting index for using GPUs. default = [ 0 ]
+  --use_gpu_num use_gpu_num
+                        Specifying the number of GPUs in use. default = [ 1 ]
+```
 For example, `--start_gpu_num 0` and `--use_gpu_num 2` indicates a total of two GPUs to be used, with the assigned GPU indices being `gpu:0` and `gpu:1`. 
+
 Default configurations are set in [gpu_config.py](/configs/gpu_config.py).
 
 ## <a name="demo"></a>Demo data
