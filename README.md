@@ -2,6 +2,8 @@
 [![GitHub](https://img.shields.io/badge/python-3-blue)](https://www.python.org/)
 [![GitHub](https://img.shields.io/badge/license-GPL--3.0-green)](https://github.com/CSU-KangHu/NeuralTE/blob/master/LICENSE)
 [![Conda](https://img.shields.io/badge/Conda-support-yellow)](https://docs.conda.io/en/latest/)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10538960.svg)](https://doi.org/10.5281/zenodo.10538960)
+
 
 `NeuralTE` uses a Convolutional Neural Network (CNN) to classify transposable elements (TEs) at the **superfamily** level, based on the **sequence** and **structural features** of transposons.
 
