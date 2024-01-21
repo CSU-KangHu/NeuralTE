@@ -5,12 +5,12 @@
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10538960.svg)](https://doi.org/10.5281/zenodo.10538960)
 
 
-`NeuralTE` uses a Convolutional Neural Network (CNN) to classify transposable elements (TEs) at the **superfamily** level, based on the **sequence** and **structural features** of transposons.
+`NeuralTE` uses a Convolutional Neural Network (CNN) to classify transposable elements (TEs) at the **superfamily** level, based on the **TE structure** and **k-mer occurrence** features.
 
-It is recommended that the TE library to be classified consists of full-length TEs. Many TE libraries often  divide LTR retrotransposons into terminal and internal sequences, such as `Copia-62_PHord-LTR` and `Copia-62_PHord-I` in Repbase, and we suggest restoring them to full-length LTRs before classification. 
+It is recommended that the TE library to be classified consists of full-length TEs. TE libraries always divide LTR retrotransposons into terminal and internal sequences, such as `Copia-62_PHord-LTR` and `Copia-62_PHord-I` in Repbase, and we suggest restoring them to full-length LTRs before classification. 
 
-We recommend using [HiTE](https://github.com/CSU-KangHu/HiTE) for generating full-length TE libraries, as it has the capability to identify more full-length TEs, including novel ones.
-For fragmented TEs, you can use [RepeatClassifier](https://github.com/Dfam-consortium/RepeatModeler/blob/master/RepeatClassifier) configured with a [complete Dfam library](https://www.repeatmasker.org/RepeatMasker/) for classification using homology searches.
+We recommend using [HiTE](https://github.com/CSU-KangHu/HiTE) to generate full-length TE libraries, as it can identify more full-length TEs compared to other tools.
+For the classification of fragmented TEs, you can use [RepeatClassifier](https://github.com/Dfam-consortium/RepeatModeler/blob/master/RepeatClassifier) configured with a [complete Dfam library](https://www.repeatmasker.org/RepeatMasker/).
 
 ## Table of Contents
 - [Installation](#install)
