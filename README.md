@@ -14,6 +14,10 @@ For the classification of fragmented TEs, you can use [RepeatClassifier](https:/
 
 ## Table of Contents
 - [Installation](#install)
+  - [Run with Conda](#install_conda)
+  - [Run with Singularity](#install_singularity)
+  - [Run with Docker](#install_docker)
+  
 - [Pre-trained models](#models)
 - [Specify the GPUs](#gpu)
 - [Demo data](#demo)
@@ -37,21 +41,72 @@ NeuralTE is built on [Python3](https://www.python.org/) and [Keras](https://kera
        [rmblast](https://www.repeatmasker.org/rmblast/) \
        [openpyxl](https://openpyxl.readthedocs.io/)
 
-#### System Requirements
+### System Requirements
 `NeuralTE` requires a standard computer to use the Convolutional Neural Network (CNN). Using GPU could acceralate the process of TE classification.
 
 Recommended Hardware requirements: 40 CPU processors, 128 GB RAM.
 
 Recommended OS: (Ubuntu 16.04, CentOS 7, etc.)
 
-```sh
+### <a name="install_conda"></a>Option 1. Run with Conda
+```sh 
 git clone https://github.com/CSU-KangHu/NeuralTE.git ## Alternatively, you can download the zip file directly from the repository.
 cd NeuralTE
 chmod +x tools/*
 
 conda install mamba -c conda-forge
+# Find the **yml** file in the project directory and run
 mamba env create --name NeuralTE -f environment.yml
 conda activate NeuralTE
+```
+run NeuralTE with [demo](#demo) data.
+
+### <a name="install_singularity"></a>Option 2. Run with Singularity
+```sh
+# pull singularity image (once for all). There will be a NeuralTE.sif file.
+singularity pull NeuralTE.sif docker://kanghu/neuralte:1.0.0
+
+# run NeuralTE with demo data
+singularity run -B ${host_path}:${container_path} ${pathTo}/NeuralTE.sif python src/Classifier.py \
+ --data ${pathTo}/NeuralTE/demo/test.fa \
+ --model_path models/NeuralTE_model.h5 \
+ --outdir ${pathTo}/NeuralTE/demo/work \
+ --thread ${threads_num}
+ # e.g., my command: 
+ # singularity run -B /home/hukang:/home/hukang /home/hukang/NeuralTE.sif python src/Classifier.py \
+ # --data /home/hukang/NeuralTE/demo/test.fa \
+ # --model_path models/NeuralTE_model.h5 \
+ # --outdir /home/hukang/NeuralTE/demo/work/ \
+ # --thread 40
+ 
+ # (1) The option "-B" is used to specify directories to be mounted.
+ #     It is recommended to set ${host_path} and ${container_path} to your data directory, and ensure 
+ #     that all input and output files are located within the directory.
+ # (2) "--model_path" uses a pre-trained model within the container, using a relative path that does not require modification.
+```
+
+### <a name="install_docker"></a>Option 3. Run with Docker
+```sh
+# pull docker image (once for all).
+docker pull kanghu/neuralte:1.0.0
+
+# run NeuralTE with demo data
+docker run -v ${host_path}:${container_path} kanghu/neuralte:1.0.0 python src/Classifier.py \
+ --data ${pathTo}/NeuralTE/demo/test.fa \
+ --model_path models/NeuralTE_model.h5 \
+ --outdir ${pathTo}/NeuralTE/demo/work \
+ --thread ${threads_num}
+ # e.g., my command: 
+ # docker run -v /home/hukang:/home/hukang kanghu/neuralte:1.0.0 python src/Classifier.py 
+ # --data /home/hukang/NeuralTE/demo/test.fa 
+ # --model_path models/NeuralTE_model.h5 
+ # --outdir /home/hukang/NeuralTE/demo/work
+ # --thread 40
+ 
+ # (1) The option "-v" is used to specify directories to be mounted.
+ #     It is recommended to set ${host_path} and ${container_path} to your data directory, and ensure 
+ #     that all input and output files are located within the directory.
+ # (2) "--model_path" uses a pre-trained model within the container, using a relative path that does not require modification.
 ```
 
 ## <a name="models"></a>Pre-trained models
@@ -78,6 +133,10 @@ Please refer to [demo](/demo) for some demo data to play with:
 * _test.fa_: demo TE library to be classified.
 * _genome.fa_: demo sequences of the genome assembly.
 
+Certainly! Here's a rewritten version in English:
+
+The following examples demonstrate the installation using `Conda`, 
+with similar procedures for running in `Singularity` and `Docker` installations.
 ```sh
 # 1.Classify TE library without genome
 # Inputs: 
@@ -391,4 +450,7 @@ optional arguments:
                         Whether to use breakpoint training. 1: true, 0: false. The model will continue training from the last failed parameters to avoid training from head. default = [ 0 ]
 ```
 
+## Citations
+Please cite our paper if you find `NeuralTE` useful:
 
+Hu, K., Xu, M., Zou, Y., & Wang, J.✉ (2023). HiTE: An accurate dynamic boundary adjustment approach for full-length Transposable Elements detection and annotation in Genome Assemblies. [bioRxiv](https://doi.org/10.1101/2023.05.23.541879).

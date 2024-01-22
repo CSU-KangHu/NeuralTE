@@ -135,9 +135,9 @@ class CNN_Model:
             # Add flattening and fully connected layers
             flatten = Flatten()(dropout1)
             dense1 = Dense(128, activation='relu')(flatten)
-            dropout2 = Dropout(config.cnn_dropout)(dense1)
+            # dropout2 = Dropout(config.cnn_dropout)(dense1)
             # Output layer
-            output_layer = Dense(int(config.class_num), activation='softmax')(dropout2)
+            output_layer = Dense(int(config.class_num), activation='softmax')(dense1)
             # Build the model
             model = Model(inputs=input_layer, outputs=output_layer)
             # Compile the model
