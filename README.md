@@ -1,6 +1,8 @@
 # NeuralTE
 [![GitHub](https://img.shields.io/badge/python-3-blue)](https://www.python.org/)
 [![GitHub](https://img.shields.io/badge/license-GPL--3.0-green)](https://github.com/CSU-KangHu/NeuralTE/blob/master/LICENSE)
+[![DockerHub](https://img.shields.io/badge/Singularity-support-blue)](https://docs.sylabs.io/guides/3.5/user-guide/introduction.html)
+[![DockerHub](https://img.shields.io/badge/Docker-support-orange)](https://hub.docker.com/repository/docker/kanghu/hite/general)
 [![Conda](https://img.shields.io/badge/Conda-support-yellow)](https://docs.conda.io/en/latest/)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10538960.svg)](https://doi.org/10.5281/zenodo.10538960)
 
@@ -132,8 +134,6 @@ Default configurations are set in [gpu_config.py](/configs/gpu_config.py).
 Please refer to [demo](/demo) for some demo data to play with:
 * _test.fa_: demo TE library to be classified.
 * _genome.fa_: demo sequences of the genome assembly.
-
-Certainly! Here's a rewritten version in English:
 
 The following examples demonstrate the installation using `Conda`, 
 with similar procedures for running in `Singularity` and `Docker` installations.
