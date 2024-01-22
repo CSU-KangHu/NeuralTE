@@ -98,10 +98,10 @@ docker run -v ${host_path}:${container_path} kanghu/neuralte:1.0.0 python src/Cl
  --outdir ${pathTo}/NeuralTE/demo/work \
  --thread ${threads_num}
  # e.g., my command: 
- # docker run -v /home/hukang:/home/hukang kanghu/neuralte:1.0.0 python src/Classifier.py 
- # --data /home/hukang/NeuralTE/demo/test.fa 
- # --model_path models/NeuralTE_model.h5 
- # --outdir /home/hukang/NeuralTE/demo/work
+ # docker run -v /home/hukang:/home/hukang kanghu/neuralte:1.0.0 python src/Classifier.py \
+ # --data /home/hukang/NeuralTE/demo/test.fa \
+ # --model_path models/NeuralTE_model.h5 \
+ # --outdir /home/hukang/NeuralTE/demo/work \
  # --thread 40
  
  # (1) The option "-v" is used to specify directories to be mounted.
