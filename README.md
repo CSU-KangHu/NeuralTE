@@ -1,9 +1,9 @@
 # NeuralTE
 [![GitHub](https://img.shields.io/badge/python-3-blue)](https://www.python.org/)
 [![GitHub](https://img.shields.io/badge/license-GPL--3.0-green)](https://github.com/CSU-KangHu/NeuralTE/blob/master/LICENSE)
+[![Conda](https://img.shields.io/badge/Conda-support-yellow)](https://docs.conda.io/en/latest/)
 [![DockerHub](https://img.shields.io/badge/Singularity-support-blue)](https://docs.sylabs.io/guides/3.5/user-guide/introduction.html)
 [![DockerHub](https://img.shields.io/badge/Docker-support-orange)](https://hub.docker.com/repository/docker/kanghu/hite/general)
-[![Conda](https://img.shields.io/badge/Conda-support-yellow)](https://docs.conda.io/en/latest/)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10538960.svg)](https://doi.org/10.5281/zenodo.10538960)
 
 
@@ -19,7 +19,6 @@ For the classification of fragmented TEs, you can use [RepeatClassifier](https:/
   - [Run with Conda](#install_conda)
   - [Run with Singularity](#install_singularity)
   - [Run with Docker](#install_docker)
-  
 - [Pre-trained models](#models)
 - [Specify the GPUs](#gpu)
 - [Demo data](#demo)
