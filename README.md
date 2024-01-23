@@ -2,8 +2,6 @@
 [![GitHub](https://img.shields.io/badge/python-3-blue)](https://www.python.org/)
 [![GitHub](https://img.shields.io/badge/license-GPL--3.0-green)](https://github.com/CSU-KangHu/NeuralTE/blob/master/LICENSE)
 [![Conda](https://img.shields.io/badge/Conda-support-yellow)](https://docs.conda.io/en/latest/)
-[![DockerHub](https://img.shields.io/badge/Singularity-support-blue)](https://docs.sylabs.io/guides/3.5/user-guide/introduction.html)
-[![DockerHub](https://img.shields.io/badge/Docker-support-orange)](https://hub.docker.com/repository/docker/kanghu/hite/general)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10538960.svg)](https://doi.org/10.5281/zenodo.10538960)
 
 
@@ -16,9 +14,6 @@ For the classification of fragmented TEs, you can use [RepeatClassifier](https:/
 
 ## Table of Contents
 - [Installation](#install)
-  - [Run with Conda](#install_conda)
-  - [Run with Singularity](#install_singularity)
-  - [Run with Docker](#install_docker)
 - [Pre-trained models](#models)
 - [Specify the GPUs](#gpu)
 - [Demo data](#demo)
@@ -62,6 +57,7 @@ conda activate NeuralTE
 ```
 run NeuralTE with [demo](#demo) data.
 
+<!-- 
 ### <a name="install_singularity"></a>Option 2. Run with Singularity
 ```sh
 # pull singularity image (once for all). There will be a NeuralTE.sif file.
@@ -109,6 +105,7 @@ docker run -v ${host_path}:${container_path} kanghu/neuralte:1.0.1 python src/Cl
  #     that all input and output files are located within the directory.
  # (2) "--model_path" uses a pre-trained model within the container, using a relative path that does not require modification.
 ```
+-->
 
 ## <a name="models"></a>Pre-trained models
 See [models](/models):
@@ -247,12 +244,12 @@ python ${pathTo}/NeuralTE/src/Trainer.py \
  --use_gpu_num ${use_gpu_num}
  # e.g., my command: 
  # python /home/hukang/NeuralTE/src/Trainer.py \
- # --data /home/hukang/NeuralTE/data/train.ref \
+ # --data /home/hukang/test/train.ref \
  # --is_train 1 \
  # --is_predict 0 \
  # --use_TSD 0 \
- # --outdir /home/hukang/NeuralTE/work \
- # --thread 40
+ # --outdir /home/hukang/test/work \
+ # --thread 40 \
  # --start_gpu_num 0 \
  # --use_gpu_num 1
  
@@ -278,12 +275,12 @@ python ${pathTo}/NeuralTE/src/Trainer.py \
  --use_gpu_num ${use_gpu_num}
  # e.g., my command: 
  # python /home/hukang/NeuralTE/src/Trainer.py \
- # --data /home/hukang/NeuralTE/data/train.ref \
+ # --data /home/hukang/test/train.ref \
  # --genome /home/hukang/NeuralTE/data/genome.info \
  # --is_train 1 \
  # --is_predict 0 \
  # --use_TSD 1 \
- # --outdir /home/hukang/NeuralTE/work \
+ # --outdir /home/hukang/test/work \
  # --thread 40 \
  # --start_gpu_num 0 \
  # --use_gpu_num 1
