@@ -12,8 +12,8 @@ RUN apt-get update && apt-get install unzip --yes && apt-get install less --yes 
 # Download NeuralTE from Github
 # RUN git clone https://github.com/CSU-KangHu/NeuralTE.git
 # Download NeuralTE from Zenodo
-RUN curl -LJO https://zenodo.org/records/10538960/files/CSU-KangHu/NeuralTE-v1.0.0.zip?download=1 &&  \
-    unzip NeuralTE-v1.0.0.zip && mv CSU-KangHu-NeuralTE-* /NeuralTE
+RUN curl -LJO https://zenodo.org/records/10552099/files/CSU-KangHu/NeuralTE-v1.0.1.zip?download=1 &&  \
+    unzip NeuralTE-v1.0.1.zip && mv CSU-KangHu-NeuralTE-* /NeuralTE
 
 RUN conda install mamba -c conda-forge -y
 RUN cd /NeuralTE && chmod +x tools/* && mamba env create --name ${DNAME} --file=environment.yml && conda clean -a

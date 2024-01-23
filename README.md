@@ -65,7 +65,7 @@ run NeuralTE with [demo](#demo) data.
 ### <a name="install_singularity"></a>Option 2. Run with Singularity
 ```sh
 # pull singularity image (once for all). There will be a NeuralTE.sif file.
-singularity pull NeuralTE.sif docker://kanghu/neuralte:1.0.0
+singularity pull NeuralTE.sif docker://kanghu/neuralte:1.0.1
 
 # run NeuralTE with demo data
 singularity run -B ${host_path}:${container_path} ${pathTo}/NeuralTE.sif python src/Classifier.py \
@@ -89,16 +89,16 @@ singularity run -B ${host_path}:${container_path} ${pathTo}/NeuralTE.sif python 
 ### <a name="install_docker"></a>Option 3. Run with Docker
 ```sh
 # pull docker image (once for all).
-docker pull kanghu/neuralte:1.0.0
+docker pull kanghu/neuralte:1.0.1
 
 # run NeuralTE with demo data
-docker run -v ${host_path}:${container_path} kanghu/neuralte:1.0.0 python src/Classifier.py \
+docker run -v ${host_path}:${container_path} kanghu/neuralte:1.0.1 python src/Classifier.py \
  --data ${pathTo}/NeuralTE/demo/test.fa \
  --model_path models/NeuralTE_model.h5 \
  --outdir ${pathTo}/NeuralTE/demo/work \
  --thread ${threads_num}
  # e.g., my command: 
- # docker run -v /home/hukang:/home/hukang kanghu/neuralte:1.0.0 python src/Classifier.py \
+ # docker run -v /home/hukang:/home/hukang kanghu/neuralte:1.0.1 python src/Classifier.py \
  # --data /home/hukang/NeuralTE/demo/test.fa \
  # --model_path models/NeuralTE_model.h5 \
  # --outdir /home/hukang/NeuralTE/demo/work \
@@ -360,7 +360,7 @@ usage: Classifier.py [-h] --data data --outdir output_dir [--use_TSD use_TSD] [-
                      [--use_kmers use_kmers] [--use_terminal use_terminal] [--use_minority use_minority] [--use_domain use_domain] [--use_ends use_ends] [--is_wicker is_wicker] [--is_plant is_plant] [--threads thread_num] [--internal_kmer_sizes internal_kmer_sizes]
                      [--terminal_kmer_sizes terminal_kmer_sizes]
 
-########################## NeuralTE, version 1.0.0 ##########################
+########################## NeuralTE, version 1.0.1 ##########################
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -402,7 +402,7 @@ usage: Trainer.py [-h] --data data --outdir output_dir --use_TSD use_TSD --is_tr
                   [--use_kmers use_kmers] [--use_terminal use_terminal] [--use_minority use_minority] [--use_domain use_domain] [--use_ends use_ends] [--threads thread_num] [--internal_kmer_sizes internal_kmer_sizes] [--terminal_kmer_sizes terminal_kmer_sizes]
                   [--cnn_num_convs cnn_num_convs] [--cnn_filters_array cnn_filters_array] [--cnn_kernel_sizes_array cnn_kernel_sizes_array] [--cnn_dropout cnn_dropout] [--batch_size batch_size] [--epochs epochs] [--use_checkpoint use_checkpoint]
 
-########################## NeuralTE, version 1.0.0 ##########################
+########################## NeuralTE, version 1.0.1 ##########################
 
 optional arguments:
   -h, --help            show this help message and exit

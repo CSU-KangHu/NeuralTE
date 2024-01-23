@@ -44,7 +44,7 @@ use_checkpoint = 0  # Whether to use checkpoint training; set to 1 to resume tra
 
 
 ################################################### The following parameters do not need modification ######################################################################
-version_num = '1.0.0'
+version_num = '1.0.1'
 work_dir = project_dir + '/work' # temp work directory
 
 non_temp_files = ['classified\.info', 'classified_TE\.fa', '.*\.domain']
