@@ -927,8 +927,8 @@ def get_domain_info(cons, lib, output_table, threads, temp_dir):
         os.system('rm -rf ' + temp_dir)
     os.makedirs(temp_dir)
 
-    # blast_db_command = 'makeblastdb -dbtype prot -in ' + lib
-    # os.system(blast_db_command)
+    blast_db_command = 'makeblastdb -dbtype prot -in ' + lib
+    os.system(blast_db_command)
     # 1. Divide the cons, and for each block, use blastx -num_threads 1 -evalue 1e-20 to compare cons with domain.
     partitions_num = int(threads)
     consensus_contignames, consensus_contigs = read_fasta(cons)
