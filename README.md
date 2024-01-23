@@ -130,9 +130,6 @@ Default configurations are set in [gpu_config.py](/configs/gpu_config.py).
 Please refer to [demo](/demo) for some demo data to play with:
 * _test.fa_: demo TE library to be classified.
 * _genome.fa_: demo sequences of the genome assembly.
-
-The following examples demonstrate the installation using `Conda`, 
-with similar procedures for running in `Singularity` and `Docker` installations.
 ```sh
 # 1.Classify TE library without genome
 # Inputs: 
