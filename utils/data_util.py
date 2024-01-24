@@ -963,7 +963,7 @@ def get_domain_info(cons, lib, output_table, threads, temp_dir):
     if is_exit:
         print('Error occur, exit...')
         exit(1)
-
+ 
 
 def multiple_alignment_blastx_v1(repeats_path, merge_distance):
     try:
