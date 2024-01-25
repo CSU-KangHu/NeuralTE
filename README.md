@@ -446,4 +446,4 @@ optional arguments:
 ## Citations
 Please cite our paper if you find `NeuralTE` useful:
 
-Hu, K., Xu, M., Zou, Y., & Wang, J.✉ (2023). HiTE: An accurate dynamic boundary adjustment approach for full-length Transposable Elements detection and annotation in Genome Assemblies. [bioRxiv](https://doi.org/10.1101/2023.05.23.541879).
+Hu, K., Xu, M., Gao, X. & Wang, J.✉ (2024). NeuralTE: an accurate approach for Transposable Element superfamily classification with multi-feature fusion. [bioRxiv](https://doi.org:10.1101/2024.01.21.576519).
