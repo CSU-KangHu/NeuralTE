@@ -86,9 +86,10 @@ class DataProcessor:
 
             # Concatenate LTR sequences with LTR internal sequences from the input TE library to create a complete LTR sequence
             data, repbase_labels = connect_LTR(data)
-
             # Remove domain files to ensure regeneration every time
             os.system('rm -f ' + domain_train_path)
+            # set keep_raw = 1 to ensure not lose any sequence
+            config.keep_raw = 1
 
         names, contigs = read_fasta_v1(data)
         # Convert Repbase labels to Wicker format
