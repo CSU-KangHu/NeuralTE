@@ -933,7 +933,7 @@ def get_domain_info(cons, lib, output_table, threads, temp_dir):
     os.system(blast_db_command + ' > /dev/null 2>&1')
     # 1. Divide the cons, and for each block, use blastx -num_threads 1 -evalue 1e-20 to compare cons with domain.
     partitions_num = int(threads)
-    consensus_contignames, consensus_contigs = read_fasta(cons)
+    consensus_contignames, consensus_contigs = read_fasta_v1(cons)
     data_partitions = PET(consensus_contigs.items(), partitions_num)
     merge_distance = 100
     file_list = []
@@ -977,6 +977,26 @@ def multiple_alignment_blastx_v1(repeats_path, merge_distance):
                         + str(1) + ' -evalue 1e-20 -query ' + split_repeats_path + ' -outfmt 6 > ' + blastx2Results_path
         #os.system(align_command)
         run_command(align_command)
+
+        # extract protein name and species
+        protein_species_dict = {}
+        p_names, p_contigs = read_fasta_v1(protein_db_path)
+        for name in p_names:
+            protein_name = name.split(' ')[0]
+            pattern = r'\[(.*?)\]'  # 匹配方括号内的任意字符，非贪婪模式
+            match = re.search(pattern, name)
+            if match:
+                species = match.group(1)  # 获取匹配到的第一个子组
+            else:
+                species = 'Unknown'
+            protein_species_dict[protein_name] = species
+
+        # extract TE name and species
+        TE_species_dict = {}
+        query_names1, query_contigs1 = read_fasta_v1(split_repeats_path)
+        for name in query_names1:
+            parts = name.split('\t')
+            TE_species_dict[parts[0]] = parts[2]
 
         fixed_extend_base_threshold = merge_distance
         # Merge segmented blastx alignments.
@@ -1226,9 +1246,14 @@ def multiple_alignment_blastx_v1(repeats_path, merge_distance):
                         if is_new_domain:
                             merge_domains.append(domain_info)
 
+                # Filter out records whose TE sequence and domain sequence come from the same species
+                # to avoid TE sequence and domain sequence coming from the same sequence.
                 for domain_info in merge_domains:
-                    f_save.write(query_name + '\t' + str(domain_info[6]) + '\t' + str(domain_info[0]) + '\t' + str(
-                        domain_info[1]) + '\t' + str(domain_info[3]) + '\t' + str(domain_info[4]) + '\n')
+                    domain_name = str(domain_info[6])
+                    domain_name = domain_name.replace(',', '')
+                    if TE_species_dict[query_name] != protein_species_dict[domain_name]:
+                        f_save.write(query_name + '\t' + str(domain_name) + '\t' + str(domain_info[0]) + '\t' + str(
+                            domain_info[1]) + '\t' + str(domain_info[3]) + '\t' + str(domain_info[4]) + '\n')
 
         f_save.close()
         return cur_table

@@ -11,8 +11,8 @@ sys.path.append(configs_folder)
 from configs import config
 from utils.data_util import read_fasta_v1, read_fasta, store_fasta
 
-def split_dataset(sequences, train_output_file, test_output_file, split_ratio=0.8):
-    # Save the dataset by category, dividing data in each category into 80% for training and 20% for testing.
+def split_dataset(sequences, train_output_file, test_output_file, split_ratio=0.6):
+    # Save the dataset by category, dividing data in each category into 60% for training, 20% for validating and 20% for testing.
     sequences_types = {}
     for name in sequences.keys():
         label = name.split('\t')[1]
@@ -22,6 +22,7 @@ def split_dataset(sequences, train_output_file, test_output_file, split_ratio=0.
         cur_label_sequences[name] = sequences[name]
 
     train_sequences = {}
+    validate_sequences = {}
     test_sequences = {}
     for label in sequences_types.keys():
         cur_label_sequences = sequences_types[label]
@@ -31,12 +32,17 @@ def split_dataset(sequences, train_output_file, test_output_file, split_ratio=0.
         random.shuffle(all_ids)
         train_ids = all_ids[:int(split_ratio * len(all_ids))]
         test_ids = all_ids[int(split_ratio * len(all_ids)):]
+        # validation_ids = all_ids[int(split_ratio * len(all_ids)):int((split_ratio + (1 - split_ratio) / 2) * len(all_ids))]
+        #test_ids = all_ids[int((split_ratio + (1 - split_ratio) / 2) * len(all_ids)):]
         for seq_id in train_ids:
             train_sequences[seq_id] = cur_label_sequences[seq_id]
+        # for seq_id in validation_ids:
+        #     validate_sequences[seq_id] = cur_label_sequences[seq_id]
         for seq_id in test_ids:
             test_sequences[seq_id] = cur_label_sequences[seq_id]
 
     store_fasta(train_sequences, train_output_file)
+    # store_fasta(validate_sequences, validate_output_file)
     store_fasta(test_sequences, test_output_file)
 
 
@@ -76,13 +82,15 @@ def main():
     data_path = os.path.realpath(data_path)
     out_dir = os.path.realpath(out_dir)
     repbase_train_path = out_dir + '/train.ref'
-    repbase_test_path = out_dir + '/test.ref'
+    # repbase_validate_path = out_dir + '/valid.ref'
+    repbase_test_path = out_dir + '/valid.ref'
 
     # Divide the dataset into training and testing sets in an 80:20 ratio.
     repbase_names, repbase_contigs = read_fasta_v1(data_path)
     split_dataset(repbase_contigs, repbase_train_path, repbase_test_path, split_ratio=ratio)
     print_dataset_info(repbase_train_path, 'train')
-    print_dataset_info(repbase_test_path, 'test')
+    # print_dataset_info(repbase_validate_path, 'valid')
+    print_dataset_info(repbase_test_path, 'valid')
 
 
 if __name__ == '__main__':
