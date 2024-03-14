@@ -1,3 +1,4 @@
+import argparse
 import ast
 import os
 import sys
@@ -11,12 +12,13 @@ sys.path.append(configs_folder)
 
 
 import random
-from configs import config
+from configs import config, gpu_config
 from DataProcessor import DataProcessor
 from src.Classifier import Classifier
 from src.Trainer import Trainer
 from src.CrossValidator import CrossValidator
-from utils.data_util import get_feature_len
+from utils.data_util import get_feature_len, get_gpu_config
+from utils.show_util import showTrainParams
 
 def test_use_all_repbase_no_tsd():
     # 测试分别使用不同的特征变化，五折交叉验证
@@ -149,7 +151,7 @@ def test_cnn_kernel_size(work_dir):
         model_path = trainer.train(X, y, config.cnn_num_convs, config.cnn_filters_array)
         # print('Trained model is stored in:', model_path)
 
-        data_path = config.work_dir + "/test.ref"
+        data_path = config.work_dir + "/valid.ref"
         data_processor = DataProcessor()
         X, y, seq_names, data_path = data_processor.load_data(config.internal_kmer_sizes, config.terminal_kmer_sizes,
                                                               data_path)
@@ -190,6 +192,12 @@ def test_cnn_filters(work_dir):
         config.cnn_filters_array = 3 * [cnn_filters_array]
         print('cnn_filters_array:', config.cnn_filters_array)
 
+        params = {}
+        params['data_path'] = work_dir
+        params['outdir'] = work_dir
+        params['genome'] = work_dir
+        showTrainParams(params)
+
         X_feature_len = get_feature_len()
         config.X_feature_len = X_feature_len
 
@@ -205,7 +213,7 @@ def test_cnn_filters(work_dir):
         model_path = trainer.train(X, y, config.cnn_num_convs, config.cnn_filters_array)
         # print('Trained model is stored in:', model_path)
 
-        data_path = config.work_dir + "/test.ref"
+        data_path = config.work_dir + "/valid.ref"
         data_processor = DataProcessor()
         X, y, seq_names, data_path = data_processor.load_data(config.internal_kmer_sizes, config.terminal_kmer_sizes,
                                                               data_path)
@@ -264,7 +272,7 @@ def test_cnn_layers(work_dir):
         # print('Trained model is stored in:', model_path)
 
 
-        data_path = config.work_dir + "/test.ref"
+        data_path = config.work_dir + "/valid.ref"
         data_processor = DataProcessor()
         X, y, seq_names, data_path = data_processor.load_data(config.internal_kmer_sizes, config.terminal_kmer_sizes,
                                                               data_path)
@@ -329,18 +337,18 @@ def test_kmer_size_combination(work_dir):
     config.is_predict = 0
     config.use_minority = 0
 
-    file_path = config.work_dir + '/kmer_size_test.xlsx'
-    data = pd.read_excel(file_path)
-
-    # 获取第一列数据
-    first_column = data.iloc[:, 0]  # 通过 iloc 方法选择所有行的第一列
-    second_column = data.iloc[:, 1]  # 通过 iloc 方法选择所有行的第二列
-    # 将每个字符串转换为列表
-    first_column = [ast.literal_eval(word) for word in first_column]
-    second_column = [ast.literal_eval(word) for word in second_column]
+    file_path = config.work_dir + '/kmer_size_search/kmer_size_test.xlsx'
+    # data = pd.read_excel(file_path)
+    #
+    # # 获取第一列数据
+    # first_column = data.iloc[:, 0]  # 通过 iloc 方法选择所有行的第一列
+    # second_column = data.iloc[:, 1]  # 通过 iloc 方法选择所有行的第二列
+    # # 将每个字符串转换为列表
+    # first_column = [ast.literal_eval(word) for word in first_column]
+    # second_column = [ast.literal_eval(word) for word in second_column]
     combinations = []
-    for i in range(len(first_column)):
-        combinations.append(first_column[i] + second_column[i])
+    # for i in range(len(first_column)):
+    #     combinations.append(first_column[i] + second_column[i])
 
     worksheet = workbook.active
     data = [
@@ -349,33 +357,21 @@ def test_kmer_size_combination(work_dir):
 
     for row in data:
         worksheet.append(row)
-        workbook.save(config.work_dir + '/kmer_size_test.xlsx')
+        workbook.save(file_path)
 
-    workbook = openpyxl.load_workbook(config.work_dir + '/kmer_size_test.xlsx')
+    workbook = openpyxl.load_workbook(file_path)
 
     worksheet = workbook.active
 
     # 随机生成kmer_size的组合，限制在50种
-    # internal_kmer_sizes_array = [[2], [3], [4], [5], [1, 2], [1, 3], [1, 4], [1, 5], [2, 3], [2, 4], [2, 5], [3, 4],
-    #                              [3, 5]]
-    # terminal_kmer_sizes_array = [[2], [3], [4], [5], [1, 2], [1, 3], [1, 4], [1, 5], [2, 3], [2, 4], [2, 5], [3, 4],
-    #                              [3, 5]]
     internal_kmer_sizes_array = [[2], [3], [4], [5], [1, 2], [1, 3], [1, 4], [1, 5], [2, 3], [2, 4], [2, 5], [3, 4],
                                  [3, 5],
                                  [1, 2, 3], [1, 2, 4], [1, 2, 5], [1, 3, 4], [1, 3, 5], [2, 3, 4], [2, 3, 5], [3, 4, 5]]
     terminal_kmer_sizes_array = [[2], [3], [4], [5], [1, 2], [1, 3], [1, 4], [1, 5], [2, 3], [2, 4], [2, 5], [3, 4],
                                  [3, 5],
                                  [1, 2, 3], [1, 2, 4], [1, 2, 5], [1, 3, 4], [1, 3, 5], [2, 3, 4], [2, 3, 5], [3, 4, 5]]
-    # internal_kmer_sizes_array = [[2], [3], [4], [5], [1, 2], [1, 3], [1, 4], [1, 5], [2, 3], [2, 4], [2, 5], [3, 4], [3, 5],
-    #                        [1, 2, 3], [1, 2, 4], [1, 2, 5], [1, 3, 4], [1, 3, 5], [2, 3, 4], [2, 3, 5], [3, 4, 5],
-    #                        [1, 2, 3, 4], [1, 2, 3, 5], [1, 2, 4, 5], [1, 3, 4, 5], [2, 3, 4, 5]]
-    # terminal_kmer_sizes_array = [[2], [3], [4], [5], [1, 2], [1, 3], [1, 4], [1, 5], [2, 3], [2, 4], [2, 5], [3, 4], [3, 5],
-    #                        [1, 2, 3], [1, 2, 4], [1, 2, 5], [1, 3, 4], [1, 3, 5], [2, 3, 4], [2, 3, 5], [3, 4, 5],
-    #                        [1, 2, 3, 4], [1, 2, 3, 5], [1, 2, 4, 5], [1, 3, 4, 5], [2, 3, 4, 5]]
     max_num = 50
-    # internal_kmer_sizes_array = [[2], [3]]
-    # terminal_kmer_sizes_array = [[2], [3]]
-    # max_num = 2
+
 
     i = 0
     while i < max_num:
@@ -408,7 +404,7 @@ def test_kmer_size_combination(work_dir):
         model_path = trainer.train(X, y, config.cnn_num_convs, config.cnn_filters_array)
         # print('Trained model is stored in:', model_path)
 
-        data_path = config.work_dir + "/test.ref"
+        data_path = config.work_dir + "/valid.ref"
         data_processor = DataProcessor()
         X, y, seq_names, data_path = data_processor.load_data(config.internal_kmer_sizes, config.terminal_kmer_sizes, data_path)
         print(X.shape, y.shape)
@@ -420,7 +416,7 @@ def test_kmer_size_combination(work_dir):
         # 逐行写入数据，并在每次循环后保存
         row = [str(internal_kmer_sizes), str(terminal_kmer_sizes), str(accuracy), str(precision), str(recall), str(f1)]
         worksheet.append(row)
-        workbook.save(config.work_dir + '/kmer_size_test.xlsx')
+        workbook.save(file_path)
 
 #测试数据增强前后，各个类别的性能提升
 def each_class_improve_use_data_augmentation():
@@ -448,23 +444,48 @@ def each_class_improve_use_data_augmentation():
     print('accuracy, precision, recall, f1:', accuracy, precision, recall, f1)
 
 def main():
-    #each_class_improve_use_data_augmentation()
-    #work_dir = '/home/hukang/NeuralTE/work/kmer_size_search'
-    #test_kmer_size_combination(work_dir)
+    # 1.parse args
+    describe_info = '########################## NeuralTE, version ' + str(config.version_num) + ' ##########################'
+    parser = argparse.ArgumentParser(description=describe_info)
+    parser.add_argument('--work_dir', required=True, metavar='work_dir',
+                        help='Input current work dir.')
 
-    #test_kmer_size()
 
-    # work_dir = '/home/hukang/NeuralTE/work/cnn_num_search'
+    args = parser.parse_args()
+
+    work_dir = args.work_dir
+
+    #prefix = '/public/home/hpc194701009'
+    #work_dir = prefix + '/NeuralTE/data/param_tuning/Dataset1'
+
+    gpu_config.start_gpu_num = 2
+    gpu_config.use_gpu_num = 1
+
+    # reload GPU config
+    get_gpu_config(gpu_config.start_gpu_num, gpu_config.use_gpu_num)
+
+    # file_dir = work_dir + '/kmer_size_search'
+    # if not os.path.exists(file_dir):
+    #     os.makedirs(file_dir)
+    # test_kmer_size_combination(work_dir)
+
+    # file_dir = work_dir + '/cnn_num_search'
+    # if not os.path.exists(file_dir):
+    #     os.makedirs(file_dir)
     # test_cnn_layers(work_dir)
 
-    # work_dir = '/home/hukang/NeuralTE/work/cnn_filters_search'
-    # test_cnn_filters(work_dir)
 
-    work_dir = '/home/hukang/NeuralTE/work/cnn_kernel_size_search'
+    file_dir = work_dir + '/cnn_filters_search'
+    if not os.path.exists(file_dir):
+        os.makedirs(file_dir)
+    test_cnn_filters(work_dir)
+
+    file_dir = work_dir + '/cnn_kernel_size_search'
+    if not os.path.exists(file_dir):
+        os.makedirs(file_dir)
     test_cnn_kernel_size(work_dir)
 
-    #test_use_features()
-    #test_use_all_repbase_no_tsd()
+
 
 if __name__ == '__main__':
     main()

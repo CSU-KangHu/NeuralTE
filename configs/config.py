@@ -30,8 +30,8 @@ is_debug = 1 # Is debug mode
 
 # 2. Program and model parameters
 threads = int(cpu_count())  # Use multi-threading to load data
-internal_kmer_sizes = [5]   # Size of k-mer used for converting internal sequences to k-mer frequency features
-terminal_kmer_sizes = [3, 4] # Size of k-mer used for converting terminal sequences to k-mer frequency features
+internal_kmer_sizes = [1, 3]   # Size of k-mer used for converting internal sequences to k-mer frequency features
+terminal_kmer_sizes = [1, 2, 3] # Size of k-mer used for converting terminal sequences to k-mer frequency features
 ## CNN model parameters
 cnn_num_convs = 3 # Number of CNN convolutional layers
 cnn_filters_array = [16, 16, 16] # Number of filters per convolutional layer in CNN

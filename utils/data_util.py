@@ -929,11 +929,37 @@ def get_domain_info(cons, lib, output_table, threads, temp_dir):
         os.system('rm -rf ' + temp_dir)
     os.makedirs(temp_dir)
 
+    consensus_contignames, consensus_contigs = read_fasta_v1(cons)
+    # Copy the lib to the output directory. If the current process involves
+    # evaluation, then it's necessary to filter out domains from lib
+    # that contain test species
+    temp_lib = temp_dir + '/RepeatPeps.lib'
+    os.system('cp ' + lib + ' ' + temp_lib)
+    if config.is_predict == 0:
+        test_species_set = set()
+        for name in consensus_contignames:
+            parts = name.split('\t')
+            species = parts[2]
+            test_species_set.add(species)
+        # filter out test species from the protein library of RepeatMasker.
+        lib_contigNames, lib_contigs = read_fasta_v1(lib)
+        rm_contigs = {}
+        for name in lib_contigNames:
+            pattern = r'\[(.*?)\]'
+            match = re.search(pattern, name)
+            if match:
+                species = match.group(1)
+            else:
+                species = 'Unknown'
+            if species not in test_species_set:
+                rm_contigs[name] = lib_contigs[name]
+        store_fasta(rm_contigs, temp_lib)
+
+    lib = temp_lib
     blast_db_command = 'makeblastdb -dbtype prot -in ' + lib
     os.system(blast_db_command + ' > /dev/null 2>&1')
     # 1. Divide the cons, and for each block, use blastx -num_threads 1 -evalue 1e-20 to compare cons with domain.
     partitions_num = int(threads)
-    consensus_contignames, consensus_contigs = read_fasta_v1(cons)
     data_partitions = PET(consensus_contigs.items(), partitions_num)
     merge_distance = 100
     file_list = []
@@ -1246,14 +1272,20 @@ def multiple_alignment_blastx_v1(repeats_path, merge_distance):
                         if is_new_domain:
                             merge_domains.append(domain_info)
 
-                # Filter out records whose TE sequence and domain sequence come from the same species
-                # to avoid TE sequence and domain sequence coming from the same sequence.
+                # # Filter out records whose TE sequence and domain sequence come from the same species
+                # # to avoid TE sequence and domain sequence coming from the same sequence.
+                # for domain_info in merge_domains:
+                #     domain_name = str(domain_info[6])
+                #     domain_name = domain_name.replace(',', '')
+                #     if TE_species_dict[query_name] != protein_species_dict[domain_name]:
+                #         f_save.write(query_name + '\t' + str(domain_name) + '\t' + str(domain_info[0]) + '\t' + str(
+                #             domain_info[1]) + '\t' + str(domain_info[3]) + '\t' + str(domain_info[4]) + '\n')
+
                 for domain_info in merge_domains:
                     domain_name = str(domain_info[6])
                     domain_name = domain_name.replace(',', '')
-                    if TE_species_dict[query_name] != protein_species_dict[domain_name]:
-                        f_save.write(query_name + '\t' + str(domain_name) + '\t' + str(domain_info[0]) + '\t' + str(
-                            domain_info[1]) + '\t' + str(domain_info[3]) + '\t' + str(domain_info[4]) + '\n')
+                    f_save.write(query_name + '\t' + str(domain_name) + '\t' + str(domain_info[0]) + '\t' + str(
+                                domain_info[1]) + '\t' + str(domain_info[3]) + '\t' + str(domain_info[4]) + '\n')
 
         f_save.close()
         return cur_table

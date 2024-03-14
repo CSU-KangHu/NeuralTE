@@ -332,6 +332,67 @@ def get_insert_time_dist_boxplot(output_path, output_fig, type, color):
     plt.clf()
 
 if __name__ == '__main__':
+    # # 过滤掉.domain文件中的test对应物种的所有记录
+    # test_file = '/home/hukang/NeuralTE_experiment_bak2/Dataset3/test.ref'
+    # test_names, test_contigs = read_fasta_v1(test_file)
+    # test_species_set = set()
+    # for name in test_names:
+    #     species = name.split('\t')[2]
+    #     test_species_set.add(species)
+    #
+    # protein_db_path = '/home/hukang/NeuralTE/data/RepeatPeps.lib'
+    # # extract protein name and species
+    # protein_species_dict = {}
+    # p_names, p_contigs = read_fasta_v1(protein_db_path)
+    # for name in p_names:
+    #     protein_name = name.split(' ')[0]
+    #     pattern = r'\[(.*?)\]'  # 匹配方括号内的任意字符，非贪婪模式
+    #     match = re.search(pattern, name)
+    #     if match:
+    #         species = match.group(1)  # 获取匹配到的第一个子组
+    #     else:
+    #         species = 'Unknown'
+    #     protein_species_dict[protein_name] = species
+    #
+    # domain_file = '/home/hukang/NeuralTE_experiment_bak2/Dataset3/test.ref.domain'
+    # keep_lines = []
+    # with open(domain_file, 'r') as f_r:
+    #     for i, line in enumerate(f_r):
+    #         if i <= 1:
+    #             keep_lines.append(line)
+    #             continue
+    #         domain_name = line.split('\t')[1]
+    #         domain_name = domain_name.replace(',', '')
+    #         species = protein_species_dict[domain_name]
+    #         if species not in test_species_set:
+    #             keep_lines.append(line)
+    # with open(domain_file, 'w') as f_save:
+    #     for line in keep_lines:
+    #         f_save.write(line)
+
+
+    # # 1.取出鸟类的数据当作验证集
+    # work_dir = '/home/hukang/NeuralTE/data/param_tuning/Dataset4'
+    # valid_species = work_dir + '/valid_species.txt'
+    # valid_species_list = set()
+    # with open(valid_species, 'r') as f_r:
+    #     for line in f_r:
+    #         species = line.replace('\n', '').strip()
+    #         valid_species_list.add(species)
+    # train_ref = work_dir + '/train.ref'
+    # valid_ref = work_dir + '/valid.ref'
+    # train_contigs = {}
+    # valid_contigs = {}
+    # names, contigs = read_fasta_v1(train_ref)
+    # for name in names:
+    #     cur_species = name.split('\t')[2]
+    #     if cur_species in valid_species_list:
+    #         valid_contigs[name] = contigs[name]
+    #     else:
+    #         train_contigs[name] = contigs[name]
+    # store_fasta(train_contigs, train_ref)
+    # store_fasta(valid_contigs, valid_ref)
+
     # # 1. 我们抽取出哺乳动物当作测试集，剩余其他物种当作训练集
     # work_dir = '/home/hukang/NeuralTE_experiment/Dataset8'
     # test_species = work_dir + '/test_species.txt'
@@ -683,12 +744,12 @@ if __name__ == '__main__':
     # generate_ClassifyTE_dataset(fasta_file)
 
     # # #获取RepeatClassifier的结果评估
-    # classified_path = '/home/hukang/NeuralTE_experiment/Dataset7/RC/test.ref.classified'
+    # classified_path = '/home/hukang/NeuralTE_experiment/Dataset3/RC/test.ref.classified'
     # RC_name_labels = evaluate_RepeatClassifier(classified_path)
     # # 将RepeatClassifier的macro avg由25分类，变成24分类
-    # indicators = [0.6584, 0.6211, 0.6389]
+    # indicators = [0.3323, 0.3713, 0.2847]
     # for ind in indicators:
-    #     new_ind = 3 * ind / 2
+    #     new_ind = 21 * ind / 14
     #     print(round(new_ind, 4))
 
     # # 将NeuralTE的macro avg由19分类，变成13分类
@@ -1092,7 +1153,8 @@ if __name__ == '__main__':
     # # 将RepeatMasker的同源搜索库替换成train.ref，看是否能运行
     # work_dir = '/home/hukang/miniconda3/envs/HiTE/share/RepeatMasker/Libraries'
     # rm_lib = work_dir + '/RepeatMasker.lib'
-    # train = '/home/hukang/NeuralTE_experiment/Dataset7/NeuralTE/train.ref'
+    # train = '/home/hukang/NeuralTE_experiment/Dataset1/NeuralTE/train.ref'
+    # test = '/home/hukang/NeuralTE_experiment/Dataset1/NeuralTE/test.ref'
     # wicker2RM = {}
     # # 转换成RepeatMasker标签
     # with open(config.project_dir + '/data/Wicker2RM.info', 'r') as f_r:
@@ -1117,6 +1179,30 @@ if __name__ == '__main__':
     #     rm_contigs[new_name] = train_contigs[name]
     # store_fasta(rm_contigs, rm_lib)
     #
+    # test_contigNames, test_contigs = read_fasta_v1(test)
+    # test_species_set = set()
+    # for name in test_contigNames:
+    #     parts = name.split('\t')
+    #     species = parts[2]
+    #     test_species_set.add(species)
+    #
+    # # 将RepeatMasker的蛋白质库中的test物种过滤掉
+    # rm_pep_lib = work_dir + '/RepeatPeps.lib.bak'
+    # train_contigNames, train_contigs = read_fasta_v1(rm_pep_lib)
+    # filter_pep_lib = work_dir + '/RepeatPeps.lib'
+    # rm_contigs = {}
+    # for name in train_contigNames:
+    #     pattern = r'\[(.*?)\]'  # 匹配方括号内的任意字符，非贪婪模式
+    #     match = re.search(pattern, name)
+    #     if match:
+    #         species = match.group(1)  # 获取匹配到的第一个子组
+    #     else:
+    #         species = 'Unknown'
+    #
+    #     if species not in test_species_set:
+    #         rm_contigs[name] = train_contigs[name]
+    # store_fasta(rm_contigs, filter_pep_lib)
+
     # # 将RepeatMasker的蛋白质库中的特定物种过滤掉
     # rm_pep_lib = work_dir + '/RepeatPeps.lib.bak'
     # filter_species = 'Mus musculus'
@@ -1414,7 +1500,7 @@ if __name__ == '__main__':
     #         f_save.write(name + '\t' + WickerToRM[name] + '\n')
 
     # # 画一个3D图
-    # work_dir = '/home/hukang/NeuralTE/work/kmer_size_search'
+    # work_dir = '/home/hukang/NeuralTE/data/param_tuning/Dataset1'
     # Node_matrix = np.random.rand(49, 3)
     # data_path = work_dir + '/kmer_size_test.xlsx'
     # data_frame = pd.read_excel(data_path)
@@ -1919,189 +2005,189 @@ if __name__ == '__main__':
     # store_fasta(contigs, file_path)
 
 
-    # 新增实验，在水稻上分析RepeatClassifier和NeuralTE分类标签数量交叉
-    work_dir = '/home/hukang/NeuralTE_experiment/Dataset5'
-    NeuralTE_results = work_dir + '/NeuralTE/classified.info'
-    RC_results = work_dir + '/RC/test.ref.classified'
-
-    rmToWicker = {}
-    wicker_superfamily_set = set()
-    with open(config.project_dir + '/data/TEClasses.tsv', 'r') as f_r:
-        for i, line in enumerate(f_r):
-            parts = line.split('\t')
-            rm_type = parts[5]
-            rm_subtype = parts[6]
-            repbase_type = parts[7]
-            wicker_type = parts[8]
-            wicker_type_parts = wicker_type.split('/')
-            # print(rm_type + ',' + rm_subtype + ',' + repbase_type + ',' + wicker_type)
-            if len(wicker_type_parts) != 3:
-                continue
-            wicker_superfamily_parts = wicker_type_parts[-1].strip().split(' ')
-            if len(wicker_superfamily_parts) == 1:
-                wicker_superfamily = wicker_superfamily_parts[0]
-            elif len(wicker_superfamily_parts) > 1:
-                wicker_superfamily = wicker_superfamily_parts[1].replace('(', '').replace(')', '')
-            rm_full_type = rm_type + '/' + rm_subtype
-            if wicker_superfamily == 'ERV':
-                wicker_superfamily = 'Retrovirus'
-            if wicker_superfamily == 'Viper':
-                wicker_superfamily = 'VIPER'
-            if wicker_superfamily == 'H':
-                wicker_superfamily = 'Helitron'
-            rmToWicker[rm_full_type] = wicker_superfamily
-            wicker_superfamily_set.add(wicker_superfamily)
-    # Supplement some elements
-    rmToWicker['LINE/R2'] = 'R2'
-    rmToWicker['LINE/Tad1'] = 'I'
-    rmToWicker['LINE?/L1'] = 'L1'
-    rmToWicker['LINE/CR1'] = 'I'
-    rmToWicker['DNA/PIF'] = 'PIF-Harbinger'
-    rmToWicker['SINE/ID'] = 'tRNA'
-    rmToWicker['SINE/MIR'] = 'tRNA'
-    rmToWicker['SINE/tRNA-Deu-I'] = 'tRNA'
-    rmToWicker['DNA/CMC'] = 'CACTA'
-    rmToWicker['DNA?/hAT'] = 'hAT'
-    rmToWicker['LTR/ERVL'] = 'Retrovirus'
-    rmToWicker['LINE/R2-NeSL'] = 'R2'
-    rmToWicker['DNA/Zator'] = 'Tc1-Mariner'
-    rmToWicker['Unknown'] = 'Unknown'
-
-    print(rmToWicker)
-    print(wicker_superfamily_set)
-    print(len(wicker_superfamily_set))
-
-    # As the dataset lacks these four types: Ngaro, VIPER, Maverick, and PiggyBac,
-    # instances predicted as these categories are marked as Unknown
-    filter_labels = ('Ngaro', 'VIPER', 'Maverick', 'PiggyBac')
-
-    ## 2.3 Retrieve labels classified by RepeatClassifier; for labels that didn't
-    # annotate to the superfamily or were incorrect, label them as Unknown
-    # (as our dataset labels are at the superfamily level)
-    RC_list = []
-    names, contigs = read_fasta_v1(RC_results)
-    RC_name_labels = {}
-    all_unique_RM_label = set()
-    for name in names:
-        label = name.split('#')[1].split(' ')[0]
-        if not rmToWicker.__contains__(label):
-            all_unique_RM_label.add(label)
-            label = 'Unknown'
-        else:
-            wicker_superfamily = rmToWicker[label]
-            label = wicker_superfamily
-            if label in filter_labels:
-                label = 'Unknown'
-            all_unique_RM_label.add(label)
-        RC_name_labels[name.split('#')[0]] = label
-        RC_list.append(name.split('#')[0]+'#'+label)
-    print('all_unique_RM_label:' + str(all_unique_RM_label))
-    print(RC_name_labels)
-
-    gold_standard_list = []
-    NeuralTE_list = []
-    NeuralTE_name_labels = {}
-    with open(NeuralTE_results, 'r') as f_r:
-        for line in f_r:
-            if line.startswith('#'):
-                continue
-            line = line.replace('\n', '')
-            parts = line.split(',')
-            raw_name = parts[0]
-            gold_standard = parts[1]
-            label = parts[2]
-            NeuralTE_name_labels[raw_name] = (gold_standard, label)
-            gold_standard_list.append(raw_name+'#'+gold_standard)
-            NeuralTE_list.append(raw_name + '#' + label)
-
-    # 1.金标准、RC、NeuralTE共有
-    count1 = 0
-    # 2. 金标准与RC共有、NeuralTE不同
-    count2 = 0
-    # 3. 金标准与NeuralTE共有、RC不同
-    count3 = 0
-    # 4. RC与NeuralTE共有、金标准不同
-    count4 = 0
-    # 5. 金标准、RC、NeuralTE均不相同
-    count5 = 0
-    # 6. 金标准与RC和NeuralTE均不相同
-    count6 = 0
-    # 7. RC与金标准和NeuralTE都不同
-    count7 = 0
-    # 8. NeuralTE 与金标准和 RC 都不同
-    count8 = 0
-    for raw_name in NeuralTE_name_labels.keys():
-        gold_standard, NeuralTE_label = NeuralTE_name_labels[raw_name]
-        RC_label = RC_name_labels[raw_name]
-        if gold_standard == NeuralTE_label and gold_standard == RC_label:
-            count1 += 1
-        elif gold_standard == RC_label and gold_standard != NeuralTE_label:
-            count2 += 1
-        elif gold_standard != RC_label and gold_standard == NeuralTE_label:
-            count3 += 1
-        elif gold_standard != RC_label and gold_standard != NeuralTE_label and NeuralTE_label == RC_label:
-            count4 += 1
-        elif gold_standard != RC_label and gold_standard != NeuralTE_label and NeuralTE_label != RC_label:
-            count5 += 1
-
-        if gold_standard != RC_label and gold_standard != NeuralTE_label:
-            count6 += 1
-        if RC_label != gold_standard and RC_label != NeuralTE_label:
-            count7 += 1
-        if NeuralTE_label != gold_standard and NeuralTE_label != RC_label:
-            count8 += 1
-    print('总共数量:' + str(len(NeuralTE_name_labels)))
-    print('金标准、RC、NeuralTE共有:' + str(count1))
-    print('金标准与RC共有、NeuralTE不同:' + str(count2))
-    print('金标准与NeuralTE共有、RC不同:' + str(count3))
-    print('RC与NeuralTE共有、金标准不同:' + str(count4))
-    print('金标准、RC、NeuralTE均不相同:' + str(count5))
-    print('金标准与RC和NeuralTE均不相同:' + str(count6))
-    print('RC与金标准和NeuralTE都不同:' + str(count7))
-    print('NeuralTE与金标准和RC都不同:' + str(count8))
-
-    # import matplotlib.pyplot as plt
+    # # 新增实验，在水稻上分析RepeatClassifier和NeuralTE分类标签数量交叉
+    # work_dir = '/home/hukang/NeuralTE_experiment/Dataset5'
+    # NeuralTE_results = work_dir + '/NeuralTE/classified.info'
+    # RC_results = work_dir + '/RC/test.ref.classified'
+    #
+    # rmToWicker = {}
+    # wicker_superfamily_set = set()
+    # with open(config.project_dir + '/data/TEClasses.tsv', 'r') as f_r:
+    #     for i, line in enumerate(f_r):
+    #         parts = line.split('\t')
+    #         rm_type = parts[5]
+    #         rm_subtype = parts[6]
+    #         repbase_type = parts[7]
+    #         wicker_type = parts[8]
+    #         wicker_type_parts = wicker_type.split('/')
+    #         # print(rm_type + ',' + rm_subtype + ',' + repbase_type + ',' + wicker_type)
+    #         if len(wicker_type_parts) != 3:
+    #             continue
+    #         wicker_superfamily_parts = wicker_type_parts[-1].strip().split(' ')
+    #         if len(wicker_superfamily_parts) == 1:
+    #             wicker_superfamily = wicker_superfamily_parts[0]
+    #         elif len(wicker_superfamily_parts) > 1:
+    #             wicker_superfamily = wicker_superfamily_parts[1].replace('(', '').replace(')', '')
+    #         rm_full_type = rm_type + '/' + rm_subtype
+    #         if wicker_superfamily == 'ERV':
+    #             wicker_superfamily = 'Retrovirus'
+    #         if wicker_superfamily == 'Viper':
+    #             wicker_superfamily = 'VIPER'
+    #         if wicker_superfamily == 'H':
+    #             wicker_superfamily = 'Helitron'
+    #         rmToWicker[rm_full_type] = wicker_superfamily
+    #         wicker_superfamily_set.add(wicker_superfamily)
+    # # Supplement some elements
+    # rmToWicker['LINE/R2'] = 'R2'
+    # rmToWicker['LINE/Tad1'] = 'I'
+    # rmToWicker['LINE?/L1'] = 'L1'
+    # rmToWicker['LINE/CR1'] = 'I'
+    # rmToWicker['DNA/PIF'] = 'PIF-Harbinger'
+    # rmToWicker['SINE/ID'] = 'tRNA'
+    # rmToWicker['SINE/MIR'] = 'tRNA'
+    # rmToWicker['SINE/tRNA-Deu-I'] = 'tRNA'
+    # rmToWicker['DNA/CMC'] = 'CACTA'
+    # rmToWicker['DNA?/hAT'] = 'hAT'
+    # rmToWicker['LTR/ERVL'] = 'Retrovirus'
+    # rmToWicker['LINE/R2-NeSL'] = 'R2'
+    # rmToWicker['DNA/Zator'] = 'Tc1-Mariner'
+    # rmToWicker['Unknown'] = 'Unknown'
+    #
+    # print(rmToWicker)
+    # print(wicker_superfamily_set)
+    # print(len(wicker_superfamily_set))
+    #
+    # # As the dataset lacks these four types: Ngaro, VIPER, Maverick, and PiggyBac,
+    # # instances predicted as these categories are marked as Unknown
+    # filter_labels = ('Ngaro', 'VIPER', 'Maverick', 'PiggyBac')
+    #
+    # ## 2.3 Retrieve labels classified by RepeatClassifier; for labels that didn't
+    # # annotate to the superfamily or were incorrect, label them as Unknown
+    # # (as our dataset labels are at the superfamily level)
+    # RC_list = []
+    # names, contigs = read_fasta_v1(RC_results)
+    # RC_name_labels = {}
+    # all_unique_RM_label = set()
+    # for name in names:
+    #     label = name.split('#')[1].split(' ')[0]
+    #     if not rmToWicker.__contains__(label):
+    #         all_unique_RM_label.add(label)
+    #         label = 'Unknown'
+    #     else:
+    #         wicker_superfamily = rmToWicker[label]
+    #         label = wicker_superfamily
+    #         if label in filter_labels:
+    #             label = 'Unknown'
+    #         all_unique_RM_label.add(label)
+    #     RC_name_labels[name.split('#')[0]] = label
+    #     RC_list.append(name.split('#')[0]+'#'+label)
+    # print('all_unique_RM_label:' + str(all_unique_RM_label))
+    # print(RC_name_labels)
+    #
+    # gold_standard_list = []
+    # NeuralTE_list = []
+    # NeuralTE_name_labels = {}
+    # with open(NeuralTE_results, 'r') as f_r:
+    #     for line in f_r:
+    #         if line.startswith('#'):
+    #             continue
+    #         line = line.replace('\n', '')
+    #         parts = line.split(',')
+    #         raw_name = parts[0]
+    #         gold_standard = parts[1]
+    #         label = parts[2]
+    #         NeuralTE_name_labels[raw_name] = (gold_standard, label)
+    #         gold_standard_list.append(raw_name+'#'+gold_standard)
+    #         NeuralTE_list.append(raw_name + '#' + label)
+    #
+    # # 1.金标准、RC、NeuralTE共有
+    # count1 = 0
+    # # 2. 金标准与RC共有、NeuralTE不同
+    # count2 = 0
+    # # 3. 金标准与NeuralTE共有、RC不同
+    # count3 = 0
+    # # 4. RC与NeuralTE共有、金标准不同
+    # count4 = 0
+    # # 5. 金标准、RC、NeuralTE均不相同
+    # count5 = 0
+    # # 6. 金标准与RC和NeuralTE均不相同
+    # count6 = 0
+    # # 7. RC与金标准和NeuralTE都不同
+    # count7 = 0
+    # # 8. NeuralTE 与金标准和 RC 都不同
+    # count8 = 0
+    # for raw_name in NeuralTE_name_labels.keys():
+    #     gold_standard, NeuralTE_label = NeuralTE_name_labels[raw_name]
+    #     RC_label = RC_name_labels[raw_name]
+    #     if gold_standard == NeuralTE_label and gold_standard == RC_label:
+    #         count1 += 1
+    #     elif gold_standard == RC_label and gold_standard != NeuralTE_label:
+    #         count2 += 1
+    #     elif gold_standard != RC_label and gold_standard == NeuralTE_label:
+    #         count3 += 1
+    #     elif gold_standard != RC_label and gold_standard != NeuralTE_label and NeuralTE_label == RC_label:
+    #         count4 += 1
+    #     elif gold_standard != RC_label and gold_standard != NeuralTE_label and NeuralTE_label != RC_label:
+    #         count5 += 1
+    #
+    #     if gold_standard != RC_label and gold_standard != NeuralTE_label:
+    #         count6 += 1
+    #     if RC_label != gold_standard and RC_label != NeuralTE_label:
+    #         count7 += 1
+    #     if NeuralTE_label != gold_standard and NeuralTE_label != RC_label:
+    #         count8 += 1
+    # print('总共数量:' + str(len(NeuralTE_name_labels)))
+    # print('金标准、RC、NeuralTE共有:' + str(count1))
+    # print('金标准与RC共有、NeuralTE不同:' + str(count2))
+    # print('金标准与NeuralTE共有、RC不同:' + str(count3))
+    # print('RC与NeuralTE共有、金标准不同:' + str(count4))
+    # print('金标准、RC、NeuralTE均不相同:' + str(count5))
+    # print('金标准与RC和NeuralTE均不相同:' + str(count6))
+    # print('RC与金标准和NeuralTE都不同:' + str(count7))
+    # print('NeuralTE与金标准和RC都不同:' + str(count8))
+    #
+    # # import matplotlib.pyplot as plt
+    # # from matplotlib_venn import venn3
+    # #
+    # # # 输入数据
+    # # venn_labels = {'100': 118, '010': 831, '001': 198, '110': 92, '101': 725, '011': 12, '111': 1564}
+    # #
+    # # # 画韦恩图
+    # # venn_diagram = venn3(subsets=(1, 1, 1, 1, 1, 1, 1), set_labels=('Gold Standard', 'RepeatClassifier', 'NeuralTE'))
+    # # venn_diagram.get_label_by_id('100').set_text(venn_labels['100'])
+    # # venn_diagram.get_label_by_id('010').set_text(venn_labels['010'])
+    # # venn_diagram.get_label_by_id('001').set_text(venn_labels['001'])
+    # # venn_diagram.get_label_by_id('110').set_text(venn_labels['110'])
+    # # venn_diagram.get_label_by_id('101').set_text(venn_labels['101'])
+    # # venn_diagram.get_label_by_id('011').set_text(venn_labels['011'])
+    # # venn_diagram.get_label_by_id('111').set_text(venn_labels['111'])
+    # # output_fig = '/home/hukang/NeuralTE_experiment/Dataset5/cross_num.png'
+    # # # 显示图形
+    # # plt.tight_layout()
+    # # # 显示图形
+    # # # plt.show()
+    # # plt.savefig(output_fig, format='png')
+    #
+    # from matplotlib import pyplot as plt
     # from matplotlib_venn import venn3
+    # # 假设有两组数据
+    # set1 = set(gold_standard_list)
+    # set2 = set(NeuralTE_list)
+    # set3 = set(RC_list)
+    # # 创建一个subplot
+    # fig, ax = plt.subplots()
+    # # 绘制韦恩图
+    # #venn_diagram = venn3([set1, set2, set3], ('Gold Standard', 'NeuralTE', 'RepeatClassifier'), set_colors=('#E66255', '#299D92', '#FFCE71'), alpha=0.9)
+    # venn_diagram = venn3([set1, set2, set3], ('Gold Standard', 'NeuralTE', 'RepeatClassifier'))
+    # # plt.legend(handles=[venn_diagram.get_patch_by_id('100'),  # Set 1
+    # #                     venn_diagram.get_patch_by_id('010'),  # Set 2
+    # #                     venn_diagram.get_patch_by_id('001')],  # Set 3
+    # #            labels=['Gold Standard', 'NeuralTE', 'RepeatClassifier'], loc='lower right')
     #
-    # # 输入数据
-    # venn_labels = {'100': 118, '010': 831, '001': 198, '110': 92, '101': 725, '011': 12, '111': 1564}
-    #
-    # # 画韦恩图
-    # venn_diagram = venn3(subsets=(1, 1, 1, 1, 1, 1, 1), set_labels=('Gold Standard', 'RepeatClassifier', 'NeuralTE'))
-    # venn_diagram.get_label_by_id('100').set_text(venn_labels['100'])
-    # venn_diagram.get_label_by_id('010').set_text(venn_labels['010'])
-    # venn_diagram.get_label_by_id('001').set_text(venn_labels['001'])
-    # venn_diagram.get_label_by_id('110').set_text(venn_labels['110'])
-    # venn_diagram.get_label_by_id('101').set_text(venn_labels['101'])
-    # venn_diagram.get_label_by_id('011').set_text(venn_labels['011'])
-    # venn_diagram.get_label_by_id('111').set_text(venn_labels['111'])
+    # plt.tight_layout()
+    # # 设置图形标题
+    # #plt.title("")
     # output_fig = '/home/hukang/NeuralTE_experiment/Dataset5/cross_num.png'
     # # 显示图形
-    # plt.tight_layout()
-    # # 显示图形
-    # # plt.show()
-    # plt.savefig(output_fig, format='png')
-
-    from matplotlib import pyplot as plt
-    from matplotlib_venn import venn3
-    # 假设有两组数据
-    set1 = set(gold_standard_list)
-    set2 = set(NeuralTE_list)
-    set3 = set(RC_list)
-    # 创建一个subplot
-    fig, ax = plt.subplots()
-    # 绘制韦恩图
-    #venn_diagram = venn3([set1, set2, set3], ('Gold Standard', 'NeuralTE', 'RepeatClassifier'), set_colors=('#E66255', '#299D92', '#FFCE71'), alpha=0.9)
-    venn_diagram = venn3([set1, set2, set3], ('Gold Standard', 'NeuralTE', 'RepeatClassifier'))
-    # plt.legend(handles=[venn_diagram.get_patch_by_id('100'),  # Set 1
-    #                     venn_diagram.get_patch_by_id('010'),  # Set 2
-    #                     venn_diagram.get_patch_by_id('001')],  # Set 3
-    #            labels=['Gold Standard', 'NeuralTE', 'RepeatClassifier'], loc='lower right')
-
-    plt.tight_layout()
-    # 设置图形标题
-    #plt.title("")
-    output_fig = '/home/hukang/NeuralTE_experiment/Dataset5/cross_num.png'
-    # 显示图形
-    plt.show()
-    #plt.savefig(output_fig, format='png')
+    # plt.show()
+    # #plt.savefig(output_fig, format='png')
