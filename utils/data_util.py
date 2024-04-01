@@ -951,6 +951,10 @@ def get_domain_info(cons, lib, output_table, threads, temp_dir):
                 species = match.group(1)
             else:
                 species = 'Unknown'
+            # filter content in '()'
+            pattern = r'\([^)]*\)'
+            species = re.sub(pattern, '', species)
+            species = re.sub(r'\s+', ' ', species).strip()
             if species not in test_species_set:
                 rm_contigs[name] = lib_contigs[name]
         store_fasta(rm_contigs, temp_lib)

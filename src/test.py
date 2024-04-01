@@ -332,6 +332,33 @@ def get_insert_time_dist_boxplot(output_path, output_fig, type, color):
     plt.clf()
 
 if __name__ == '__main__':
+    # work_dir = '/home/hukang/test'
+    # repbase_path = work_dir + '/oryrep.ref'
+    # new_repbase_path = work_dir + '/oryrep.RM.ref'
+    # wicker2RM = {}
+    # # 转换成RepeatMasker标签
+    # with open(config.project_dir + '/data/Wicker2RM.info', 'r') as f_r:
+    #     for line in f_r:
+    #         if line.startswith('#'):
+    #             continue
+    #         line = line.replace('\n', '')
+    #         parts = line.split('\t')
+    #         Wicker_Label = parts[0]
+    #         RepeatMasker_Label = parts[1]
+    #         wicker2RM[Wicker_Label] = RepeatMasker_Label
+    # contigNames, contigs = read_fasta_v1(repbase_path)
+    # rm_contigs = {}
+    # label_set = set()
+    # for name in contigNames:
+    #     parts = name.split('\t')
+    #     seq_name = parts[0]
+    #     label = parts[1]
+    #     label_set.add(label)
+    #     RepeatMasker_Label = wicker2RM[label]
+    #     new_name = seq_name+'#'+RepeatMasker_Label
+    #     rm_contigs[new_name] = contigs[name]
+    # store_fasta(rm_contigs, new_repbase_path)
+
     # # 过滤掉.domain文件中的test对应物种的所有记录
     # test_file = '/home/hukang/NeuralTE_experiment_bak2/Dataset3/test.ref'
     # test_names, test_contigs = read_fasta_v1(test_file)
@@ -396,6 +423,29 @@ if __name__ == '__main__':
     # # 1. 我们抽取出哺乳动物当作测试集，剩余其他物种当作训练集
     # work_dir = '/home/hukang/NeuralTE_experiment/Dataset8'
     # test_species = work_dir + '/test_species.txt'
+    # test_species_list = set()
+    # with open(test_species, 'r') as f_r:
+    #     for line in f_r:
+    #         species = line.replace('\n', '').strip()
+    #         test_species_list.add(species)
+    # all_repbase = work_dir + '/all_repbase.ref'
+    # train_ref = work_dir + '/train.ref'
+    # test_ref = work_dir + '/test.ref'
+    # train_contigs = {}
+    # test_contigs = {}
+    # names, contigs = read_fasta_v1(all_repbase)
+    # for name in names:
+    #     cur_species = name.split('\t')[2]
+    #     if cur_species in test_species_list:
+    #         test_contigs[name] = contigs[name]
+    #     else:
+    #         train_contigs[name] = contigs[name]
+    # store_fasta(train_contigs, train_ref)
+    # store_fasta(test_contigs, test_ref)
+
+    # # 1. 我们抽取出开花动物当作测试集，剩余其他物种当作训练集
+    # work_dir = '/home/hukang/NeuralTE_experiment/Dataset9'
+    # test_species = work_dir + '/flowering_plants.txt'
     # test_species_list = set()
     # with open(test_species, 'r') as f_r:
     #     for line in f_r:
@@ -532,7 +582,7 @@ if __name__ == '__main__':
     # # 重新训练DeepTE模型
     # # 1. 训练LINE模型
     # # 1.1 先提取Dataset2中的train.ref中的LINE元素对应的序列，转换成label,sequence格式
-    # work_dir = '/home/hukang/NeuralTE_experiment/Dataset8/DeepTE'
+    # work_dir = '/home/hukang/NeuralTE_experiment/Dataset9/DeepTE'
     # train = work_dir + '/train.ref'
     # contigNames, contigs = read_fasta_v1(train)
     # LINE_labels = ['R2', 'RTE', 'Jockey', 'L1', 'I']
@@ -628,18 +678,45 @@ if __name__ == '__main__':
     #             unique_labels.add(All_labels[label])
     # print(unique_labels)
 
-    # data_dir = '/home/hukang/NeuralTE_experiment/Dataset8/DeepTE'
+    # data_dir = '/home/hukang/NeuralTE_experiment/Dataset9/DeepTE'
     # test_path = data_dir + '/test.ref'
     # predict_path = data_dir + '/results/opt_DeepTE.txt'
-    # evaluate_DeepTE(test_path, predict_path)
+    # # filter random sequence
+    # names, contigs = read_fasta_v1(test_path)
+    # new_names = []
+    # new_contigs = {}
+    # random_set = set()
+    # for name in names:
+    #     if name.startswith('Random_'):
+    #         random_set.add(contigs[name])
+    #     else:
+    #         new_names.append(name)
+    #         new_contigs[name] = contigs[name]
+    #
+    # test_path = data_dir + '/test.ref.filter'
+    # with open(test_path, 'w') as f_save:
+    #     for name in new_names:
+    #         seq = new_contigs[name]
+    #         f_save.write('>'+name+'\n'+seq+'\n')
+    #
+    # predict_path_filter = data_dir + '/results/opt_DeepTE.txt.filter'
+    # with open(predict_path_filter, 'w') as f_save:
+    #     with open(predict_path, 'r') as f_r:
+    #         for line in f_r:
+    #             if line.split('\t')[0].__contains__('Random_'):
+    #                 continue
+    #             else:
+    #                 f_save.write(line)
+    #
+    # evaluate_DeepTE(test_path, predict_path_filter)
     # # 将DeepTE的macro avg由19分类，变成13分类
-    # indicators = [0.17, 0.2448, 0.1484]
+    # indicators = [0.237, 0.2104, 0.1854]
     # for ind in indicators:
-    #     new_ind = 21 * ind / 14
+    #     new_ind = 24 * ind / 15
     #     print(round(new_ind, 4))
 
     # # 替换非ATCG字符
-    # data_dir = '/home/hukang/NeuralTE_experiment/Dataset8/DeepTE'
+    # data_dir = '/home/hukang/NeuralTE_experiment/Dataset9/DeepTE'
     # train_path = data_dir + '/test.ref'
     # train_contignames, train_contigs = read_fasta_v1(train_path)
     # for name in train_contignames:
@@ -664,11 +741,45 @@ if __name__ == '__main__':
     #         new_contigs[name] = seq
     #     store_fasta(new_contigs, f)
 
-    # pred_path = '/home/hukang/NeuralTE_experiment/Dataset8/TEsorter/test.ref.rexdb.cls.lib'
-    # test_path = '/home/hukang/NeuralTE_experiment/Dataset8/TEsorter/test.ref'
+    # pred_path = '/home/hukang/NeuralTE_experiment/Dataset9/TEsorter/test.ref.rexdb.cls.lib'
+    # test_path = '/home/hukang/NeuralTE_experiment/Dataset9/TEsorter/test.ref'
+    # # filter random sequence
+    # names, contigs = read_fasta_v1(test_path)
+    # new_names = []
+    # new_contigs = {}
+    # random_set = set()
+    # for name in names:
+    #     if name.startswith('Random_'):
+    #         random_set.add(contigs[name])
+    #     else:
+    #         new_names.append(name)
+    #         new_contigs[name] = contigs[name]
+    #
+    # test_path = '/home/hukang/NeuralTE_experiment/Dataset9/TEsorter/test.ref.filter'
+    # with open(test_path, 'w') as f_save:
+    #     for name in new_names:
+    #         seq = new_contigs[name]
+    #         f_save.write('>'+name+'\n'+seq+'\n')
+    #
+    # names, contigs = read_fasta_v1(pred_path)
+    # new_names = []
+    # new_contigs = {}
+    # for name in names:
+    #     seq = contigs[name]
+    #     if seq in random_set:
+    #         continue
+    #     new_contigs[name] = seq
+    #     new_names.append(name)
+    # pred_path = '/home/hukang/NeuralTE_experiment/Dataset9/TEsorter/test.ref.rexdb.cls.lib.filter'
+    # with open(pred_path, 'w') as f_save:
+    #     for name in new_names:
+    #         seq = new_contigs[name]
+    #         f_save.write('>'+name+'\n'+seq+'\n')
+    #
+    #
     # evaluate_TEsorter(pred_path, test_path)
     # # 将TEsorter的macro avg由25分类，变成24分类
-    # indicators = [0.294, 0.2031, 0.1209]
+    # indicators = [0.5949, 0.3293, 0.3358]
     # for ind in indicators:
     #     new_ind = 4 * ind / 2
     #     print(round(new_ind, 4))
@@ -730,10 +841,10 @@ if __name__ == '__main__':
     # evaluate_ClassifyTE(predict_path)
 
     # # 1. 调用split_train_test.py将训练集划分训练集和验证集
-    # work_dir = '/home/hukang/TE_Classification/TERL/Data/DS8'
+    # work_dir = '/home/hukang/TE_Classification/TERL/Data/DS9'
     # fasta_file = work_dir + '/train.ref'
     # split_command = 'python /home/hukang/NeuralTE/utils/split_train_test.py --data_path ' + fasta_file + ' --out_dir ' + work_dir
-    # os.system(split_command)
+    # #os.system(split_command)
     # outdir = work_dir + '/Train'
     # generate_TERL_dataset(fasta_file, outdir)
     # fasta_file = work_dir + '/valid.ref'
@@ -743,20 +854,30 @@ if __name__ == '__main__':
     # fasta_file = '/home/hukang/NeuralTE_dataset/Dataset2/all_repbase.ref'
     # generate_ClassifyTE_dataset(fasta_file)
 
-    # # #获取RepeatClassifier的结果评估
-    # classified_path = '/home/hukang/NeuralTE_experiment/Dataset3/RC/test.ref.classified'
+    # # # #获取RepeatClassifier的结果评估
+    # # classified_path = '/home/hukang/NeuralTE_experiment/Dataset9/RC/test.ref.classified'
+    # # # 过滤包含的负例
+    # # names, contigs = read_fasta_v1(classified_path)
+    # # new_contigs = {}
+    # # for name in names:
+    # #     if name.startswith('Random_'):
+    # #         continue
+    # #     new_contigs[name] = contigs[name]
+    # classified_path = '/home/hukang/NeuralTE_experiment/Dataset9/RC/test.ref.classified.filter'
+    # # store_fasta(new_contigs, classified_path)
     # RC_name_labels = evaluate_RepeatClassifier(classified_path)
     # # 将RepeatClassifier的macro avg由25分类，变成24分类
-    # indicators = [0.3323, 0.3713, 0.2847]
+    # indicators = [0.4418, 0.2995, 0.3027]
     # for ind in indicators:
-    #     new_ind = 21 * ind / 14
+    #     new_ind = 24 * ind / 15
     #     print(round(new_ind, 4))
 
     # # 将NeuralTE的macro avg由19分类，变成13分类
-    # indicators = [0.3162, 0.3971, 0.303]
+    # indicators = [0.4144, 0.4113, 0.4068]
     # for ind in indicators:
-    #     new_ind = 24 * ind / 14
+    #     new_ind = 25 * ind / 15
     #     print(round(new_ind, 4))
+
 
     # # 获取NeuralTE分错类的序列，看是否能够改进
     # TE_path = '/home/hukang/NeuralTE_dataset/Dataset2/test.ref'
@@ -1153,8 +1274,8 @@ if __name__ == '__main__':
     # # 将RepeatMasker的同源搜索库替换成train.ref，看是否能运行
     # work_dir = '/home/hukang/miniconda3/envs/HiTE/share/RepeatMasker/Libraries'
     # rm_lib = work_dir + '/RepeatMasker.lib'
-    # train = '/home/hukang/NeuralTE_experiment/Dataset1/NeuralTE/train.ref'
-    # test = '/home/hukang/NeuralTE_experiment/Dataset1/NeuralTE/test.ref'
+    # train = '/home/hukang/NeuralTE_experiment/Dataset9/NeuralTE/train.ref'
+    # test = '/home/hukang/NeuralTE_experiment/Dataset9/NeuralTE/test.ref'
     # wicker2RM = {}
     # # 转换成RepeatMasker标签
     # with open(config.project_dir + '/data/Wicker2RM.info', 'r') as f_r:
@@ -1198,7 +1319,10 @@ if __name__ == '__main__':
     #         species = match.group(1)  # 获取匹配到的第一个子组
     #     else:
     #         species = 'Unknown'
-    #
+    #     # filter content in '()'
+    #     pattern = r'\([^)]*\)'
+    #     species = re.sub(pattern, '', species)
+    #     species = re.sub(r'\s+', ' ', species).strip()
     #     if species not in test_species_set:
     #         rm_contigs[name] = train_contigs[name]
     # store_fasta(rm_contigs, filter_pep_lib)
@@ -1277,13 +1401,46 @@ if __name__ == '__main__':
     # store_fasta(test_contigs, test)
 
     # work_dir = '/home/hukang/TE_Classification/TERL'
-    # test_path = work_dir + '/Data/DS8/test.ref'
-    # predict_path = work_dir + '/TERL_20240311_203751_test.ref'
+    # test_path = work_dir + '/Data/DS9/test.ref'
+    # predict_path = work_dir + '/TERL_20240326_152422_test.ref'
+    # # filter random sequence
+    # names, contigs = read_fasta_v1(test_path)
+    # new_names = []
+    # new_contigs = {}
+    # random_set = set()
+    # for name in names:
+    #     if name.startswith('Random_'):
+    #         random_set.add(contigs[name])
+    #     else:
+    #         new_names.append(name)
+    #         new_contigs[name] = contigs[name]
+    #
+    # test_path = work_dir + '/Data/DS9/test.ref.filter'
+    # with open(test_path, 'w') as f_save:
+    #     for name in new_names:
+    #         seq = new_contigs[name]
+    #         f_save.write('>'+name+'\n'+seq+'\n')
+    #
+    # names, contigs = read_fasta_v1(predict_path)
+    # new_names = []
+    # new_contigs = {}
+    # for name in names:
+    #     seq = contigs[name]
+    #     if seq in random_set:
+    #         continue
+    #     new_contigs[name] = seq
+    #     new_names.append(name)
+    # predict_path = work_dir + '/TERL_20240326_152422_test.ref.filter'
+    # with open(predict_path, 'w') as f_save:
+    #     for name in new_names:
+    #         seq = new_contigs[name]
+    #         f_save.write('>'+name+'\n'+seq+'\n')
+    #
     # evaluate_TERL(test_path, predict_path)
     # # 将TERL的macro avg由19分类，变成13分类
-    # indicators = [0.1459, 0.1759, 0.1142]
+    # indicators = [0.2386, 0.2187, 0.2032]
     # for ind in indicators:
-    #     new_ind = 21 * ind / 14
+    #     new_ind = 23 * ind / 15
     #     print(round(new_ind, 4))
 
 
