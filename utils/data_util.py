@@ -692,8 +692,8 @@ def identify_terminals(split_file, output_dir, tool_dir):
             LTR_right_pos_parts = LTR_info_parts[1].split(',')
             lLTR_start = int(LTR_left_pos_parts[0])
             lLTR_end = int(LTR_left_pos_parts[1])
-            rLTR_start = int(LTR_right_pos_parts[1])
-            rLTR_end = int(LTR_right_pos_parts[0])
+            rLTR_start = int(LTR_right_pos_parts[0])
+            rLTR_end = int(LTR_right_pos_parts[1])
             LTR_info[orig_name] = (lLTR_start, lLTR_end, rLTR_start, rLTR_end)
         TIR_info = {}
         for tir_name in tir_names:
