@@ -31,8 +31,14 @@ def plot_confusion_matrix(y_pred, y_test):
     class_list = list(y_pred_set | y_test_set)
     #class_list = list(y_test_set)
 
+    class_names = []
+    all_class_list = list(config.all_wicker_class.keys())
+    for class_num in all_class_list:
+        if class_num in class_list:
+            label = class_num
+            class_names.append(label)
     # Compute confusion matrix
-    # conf_matrix = confusion_matrix(y_test, y_pred, labels=class_names)
+    conf_matrix = confusion_matrix(y_test, y_pred, labels=class_names)
     class_report = classification_report(y_test, y_pred)
     print(class_report)
 
@@ -48,70 +54,145 @@ def plot_confusion_matrix(y_pred, y_test):
     # plt.savefig(config.work_dir + '/confusion_matrix.png', format='png')
     # #plt.show()
 
-def get_metrics(y_pred, y_test, row_nums_test, matrix_files_test):
-    y_pred = np.argmax(np.round(y_pred), axis=1)
+def get_metrics(y_pred, y_test, seq_names, data_path):
+    predicted_classes = np.argmax(np.round(y_pred), axis=1)
+    # transfer the prop less than a threshold to be unknown for a class
+    prop_thr = 0
+    max_value_predicted_classes = np.amax(y_pred, axis=1)
+    order = -1
+    ls_thr_order_list = []
+    for i in range(len(max_value_predicted_classes)):
+        order += 1
+        if max_value_predicted_classes[i] < float(prop_thr):
+            ls_thr_order_list.append(order)
 
-    # for i in range(len(y_test)):
-    #     if y_test[i] != y_pred[i]:
-    #         if y_test[i] == 0 and y_pred[i] == 1:
-    #             print('FP: ' + matrix_files_test[i])
-    #         else:
-    #             print('FN: ' + matrix_files_test[i])
+    predicted_classes_list = []
+    order = -1
+    for i in range(len(predicted_classes)):
+        order += 1
+        if order in ls_thr_order_list:
+            new_class = 28  # unknown class label
+        else:
+            new_class = predicted_classes[i]
+        predicted_classes_list.append(new_class)
+
+    SegLTR2intactLTRMap = config.work_dir + '/segLTR2intactLTR.map'
+    if seq_names is not None:
+        seqName2PredictLabel = {}
+        for i in range(0, len(predicted_classes_list)):
+            predicted_class = predicted_classes_list[i]
+            seq_name = seq_names[i][0]
+            true_label = seq_names[i][1]
+            if predicted_class != 28:
+                seqName2PredictLabel[seq_name] = (true_label, config.inverted_all_wicker_class[predicted_class])
+            else:
+                seqName2PredictLabel[seq_name] = (true_label, 'Unknown')
+
+        # Read the correspondence between intactLTR and fragmentLTR names, replace intactLTR with fragmentLTR
+        SegLTR2intactLTR = {}
+        try:
+            with open(SegLTR2intactLTRMap, 'r') as f_r:
+                for line in f_r:
+                    line = line.replace('\n', '')
+                    parts = line.split('\t')
+                    segLTR_name = parts[0]
+                    intactLTR_name = parts[1]
+                    SegLTR2intactLTR[segLTR_name] = intactLTR_name
+        except FileNotFoundError:
+            #print(SegLTR2intactLTRMap + " not found or cannot be opened.")
+            print('')
+
+        wicker2RM = {}
+        # Convert to RepeatMasker labels
+        with open(config.project_dir + '/data/Wicker2RM.info', 'r') as f_r:
+            for line in f_r:
+                if line.startswith('#'):
+                    continue
+                line = line.replace('\n', '')
+                parts = line.split('\t')
+                Wicker_Label = parts[0]
+                RepeatMasker_Label = parts[1]
+                wicker2RM[Wicker_Label] = RepeatMasker_Label
+
+
+        # Original NeuralTE predictions
+        orig_names, orig_contigs = read_fasta(data_path)
+        classified_data = config.work_dir + '/classified_TE.fa'
+        classified_contigs = {}
+        for name in orig_names:
+            orig_seq = orig_contigs[name]
+            name = name.split('/')[0].split('#')[0]
+            map_name = name
+            if SegLTR2intactLTR.__contains__(name):
+                map_name = SegLTR2intactLTR[name]
+            predict_label = seqName2PredictLabel[map_name][1]
+            if not config.is_wicker:
+                predict_label = wicker2RM[predict_label]
+            new_name = name + '#' + predict_label
+            classified_contigs[new_name] = orig_seq
+        store_fasta(classified_contigs, classified_data)
+
+        with open(config.work_dir + '/classified.info', 'w+') as opt:
+            if config.is_debug:
+                opt.write('#Seq_Name,True_Label,Predict_Label' + '\n')
+            else:
+                opt.write('#Seq_Name,Predict_Label' + '\n')
+            for name in orig_names:
+                name = name.split('/')[0].split('#')[0]
+                map_name = name
+                if SegLTR2intactLTR.__contains__(name):
+                    map_name = SegLTR2intactLTR[name]
+                predict_label = seqName2PredictLabel[map_name][1]
+                true_label = seqName2PredictLabel[map_name][0]
+                if not config.is_wicker:
+                    predict_label = wicker2RM[predict_label]
+                if config.is_debug:
+                    opt.write(name + ',' + true_label + ',' + predict_label + '\n')
+                else:
+                    opt.write(name + ',' + predict_label + '\n')
+
+    # remove temp files
+    if not config.is_debug:
+        all_files = os.listdir(config.work_dir)
+        for filename in all_files:
+            is_del = True
+            for non_temp_file in config.non_temp_files:
+                is_match = re.match(non_temp_file + '$', filename)
+                if is_match is not None:
+                    is_del = False
+                    break
+            if is_del:
+                os.system('rm -rf ' + config.work_dir + '/' + filename)
+
+
+        if os.path.exists(SegLTR2intactLTRMap):
+            os.remove(SegLTR2intactLTRMap)
 
     accuracy = 0
     precision = 0
     recall = 0
     f1 = 0
+    if not config.is_predict:
+        # compute metrics
+        accuracy = round(accuracy_score(y_test, predicted_classes_list), 4)
+        precision = round(precision_score(y_test, predicted_classes_list, average='macro'), 4)
+        recall = round(recall_score(y_test, predicted_classes_list, average='macro'), 4)
+        f1 = round(f1_score(y_test, predicted_classes_list, average='macro'), 4)
 
-    # compute metrics
-    accuracy = round(accuracy_score(y_test, y_pred), 4)
-    precision = round(precision_score(y_test, y_pred, average='macro'), 4)
-    recall = round(recall_score(y_test, y_pred, average='macro'), 4)
-    f1 = round(f1_score(y_test, y_pred, average='macro'), 4)
-
-    # plot confusion matrix
-    plot_confusion_matrix(y_test, y_pred)
-    print('accuracy, precision, recall, f1:', accuracy, precision, recall, f1)
-
-    y_copy_test = []
-    y_copy_pred = []
-    for i in range(len(y_test)):
-        y_copy_test += [y_test[i]] * row_nums_test[i]
-        y_copy_pred += [y_pred[i]] * row_nums_test[i]
-
-    y_copy_test = np.array(y_copy_test)
-    y_copy_pred = np.array(y_copy_pred)
-    copy_accuracy = 0
-    copy_precision = 0
-    copy_recall = 0
-    copy_f1 = 0
-
-    # compute metrics
-    copy_accuracy = round(accuracy_score(y_copy_test, y_copy_pred), 4)
-    copy_precision = round(precision_score(y_copy_test, y_copy_pred, average='macro'), 4)
-    copy_recall = round(recall_score(y_copy_test, y_copy_pred, average='macro'), 4)
-    copy_f1 = round(f1_score(y_copy_test, y_copy_pred, average='macro'), 4)
-
-    # plot confusion matrix
-    plot_confusion_matrix(y_copy_test, y_copy_pred)
-    print('considering copies, accuracy, precision, recall, f1:', copy_accuracy, copy_precision, copy_recall, copy_f1)
-
-    return accuracy, precision, recall, f1, copy_accuracy, copy_precision, copy_recall, copy_f1
-
-
-def get_metrics_v1(y_pred, y_test):
-    # y_pred = np.argmax(np.round(y_pred), axis=1)
-    # compute metrics
-    accuracy = round(accuracy_score(y_test, y_pred), 4)
-    precision = round(precision_score(y_test, y_pred, average='macro'), 4)
-    recall = round(recall_score(y_test, y_pred, average='macro'), 4)
-    f1 = round(f1_score(y_test, y_pred, average='macro'), 4)
-
-    # plot confusion matrix
-    plot_confusion_matrix(y_test, y_pred)
-    print('accuracy, precision, recall, f1:', accuracy, precision, recall, f1)
+        # Convert numerical labels to character labels
+        inverted_all_wicker_class = config.inverted_all_wicker_class
+        predicted_labels = []
+        test_labels = []
+        for label_num in predicted_classes_list:
+            predicted_labels.append(inverted_all_wicker_class[label_num])
+        for y_num in y_test:
+            test_labels.append(inverted_all_wicker_class[y_num])
+        # plot confusion matrix
+        plot_confusion_matrix(predicted_labels, test_labels)
+        print('accuracy, precision, recall, f1:', accuracy, precision, recall, f1)
 
     return accuracy, precision, recall, f1
+
 
 def correct_using_minority(data_path, threads):
     # Error correction for NeuralTE predictions on minority samples

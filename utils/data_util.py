@@ -9,15 +9,9 @@ from openpyxl.utils import get_column_letter
 from pandas import ExcelWriter
 import numpy as np
 import itertools
-
-from sklearn.preprocessing import MinMaxScaler
-
 from configs import config
 from configs import gpu_config
 import tensorflow as tf
-from PIL import Image
-
-from sklearn.cluster import DBSCAN
 
 
 # Calculate the proportion of each category in the repbase file.
@@ -133,19 +127,9 @@ def extract_fasta_from_embl(dfam_embl, output_fasta):
     store_fasta(sequence_dict, output_fasta)
 
 def generate_random_sequence(length):
-    bases = ['A', 'T', 'C', 'G', '-']
+    bases = ['A', 'T', 'C', 'G']
     sequence = ''.join(random.choice(bases) for _ in range(length))
     return sequence
-
-def generate_random_sequence_v1(length, dash_ratio):
-    bases = ['A', 'T', 'C', 'G']
-    num_dashes = int(length * dash_ratio)
-    non_dash_sequence = ''.join(random.choice(bases) for _ in range(length - num_dashes))
-    positions = random.sample(range(length), num_dashes)  # 随机选择num_dashes个位置
-    sequence = list(non_dash_sequence)
-    for pos in positions:
-        sequence.insert(pos, '-')
-    return ''.join(sequence)
 
 # Function to randomly generate nucleotide sequences.
 def generate_random_sequences(num_sequences):
@@ -223,8 +207,7 @@ def word_seq(seq, k, stride=1):
     i = 0
     words_list = []
     while i <= len(seq) - k:
-        cur_kmer = seq[i: i + k]
-        words_list.append(cur_kmer)
+        words_list.append(seq[i: i + k])
         i += stride
     return (words_list)
 
@@ -232,7 +215,7 @@ def generate_kmer_dic(repeat_num):
     ##initiate a dic to store the kmer dic
     ##kmer_dic = {'ATC':0,'TTC':1,...}
     kmer_dic = {}
-    bases = ['A','G','C','T', '-']
+    bases = ['A','G','C','T']
     kmer_list = list(itertools.product(bases, repeat=int(repeat_num)))
     for eachitem in kmer_list:
         #print(eachitem)
@@ -240,15 +223,6 @@ def generate_kmer_dic(repeat_num):
         kmer_dic[each_kmer] = 0
 
     return (kmer_dic)
-
-def generate_kmer_list(repeat_num):
-    final_kmer_list = []
-    bases = ['A','G','C','T', '-']
-    kmer_list = list(itertools.product(bases, repeat=int(repeat_num)))
-    for eachitem in kmer_list:
-        each_kmer = ''.join(eachitem)
-        final_kmer_list.append(each_kmer)
-    return final_kmer_list
 
 def generate_mat(words_list,kmer_dic):
     for eachword in words_list:
@@ -258,678 +232,140 @@ def generate_mat(words_list,kmer_dic):
         num_list.append(kmer_dic[eachkmer])
     return (num_list)
 
-# pile up
-def get_matrix_feature(sample_list):
-    features = []
-    for matrix_file, label in sample_list:
-        col_num = -1
-        row_num = 0
-        lines = []
-        with open(matrix_file, 'r') as f_r:
-            for line in f_r:
-                line = line.replace('\n', '').replace('\t', '')
-                col_num = len(line)
-                row_num += 1
-                lines.append(line)
+def get_batch_kmer_freq_v1(grouped_x, internal_kmer_sizes, terminal_kmer_sizes, minority_labels_class, all_wicker_class):
+    # Build vocabulary and reverse vocabulary for nucleotide sequences.
+    base_vocab = {'A': 1, 'T': 2, 'C': 3, 'G': 4}
 
-        matrix = [[''] * col_num for i in range(row_num)]
-        for row, line in enumerate(lines):
-            for col in range(len(line)):
-                matrix[row][col] = line[col]
+    group_dict = {}
+    for x in grouped_x:
+        # Split sequences into internal_Seq, LTR, and TIR segments.
+        seq_name = x[0]
+        seq = x[1]
+        TSD_seq = x[2]
+        TSD_len = x[3]
+        LTR_pos = x[4]
+        TIR_pos = x[5]
+        domain_label_set = x[6]
+        # minority_label_set = x[7]
+        # LTR_pos = x[2]
+        # TIR_pos = x[3]
+        # domain_label_set = x[4]
+        internal_seq = ''
+        LTR_seq = ''
+        TIR_seq = ''
+        LTR_pos_str = str(LTR_pos.split(':')[1]).strip()
+        TIR_pos_str = str(TIR_pos.split(':')[1]).strip()
+        if LTR_pos_str == '' and TIR_pos_str == '':
+            internal_seq = seq
+        if TIR_pos_str != '':
+            TIR_parts = TIR_pos_str.split(',')
+            left_TIR_start = int(TIR_parts[0].split('-')[0])
+            left_TIR_end = int(TIR_parts[0].split('-')[1])
+            right_TIR_start = int(TIR_parts[1].split('-')[0])
+            right_TIR_end = int(TIR_parts[1].split('-')[1])
+            TIR_seq = seq[left_TIR_start-1: left_TIR_end]
+            internal_seq = seq[left_TIR_end: right_TIR_start-1]
 
-        col_base_map = {}
-        for col_index in range(col_num):
-            if not col_base_map.__contains__(col_index):
-                col_base_map[col_index] = {}
-            base_map = col_base_map[col_index]
-            # Calculate the base composition ratio in the current column.
-            if len(base_map) == 0:
-                for row in range(row_num):
-                    cur_base = matrix[row][col_index]
-                    if not base_map.__contains__(cur_base):
-                        base_map[cur_base] = 0
-                    cur_count = base_map[cur_base]
-                    cur_count += 1
-                    base_map[cur_base] = cur_count
-            if not base_map.__contains__('-'):
-                base_map['-'] = 0
+            # Attempt to extract only the first 60 bp of the TIR sequence.
+            TIR_seq = TIR_seq[0: 60]
+        if LTR_pos_str != '':
+            LTR_parts = LTR_pos_str.split(',')
+            left_LTR_start = int(LTR_parts[0].split('-')[0])
+            left_LTR_end = int(LTR_parts[0].split('-')[1])
+            right_LTR_start = int(LTR_parts[1].split('-')[0])
+            right_LTR_end = int(LTR_parts[1].split('-')[1])
+            LTR_seq = seq[left_LTR_start-1: left_LTR_end]
+            internal_seq = seq[left_LTR_end: right_LTR_start-1]
 
+        # Represent internal_seq and LTR as k-mer frequencies and positional information.
         connected_num_list = []
-        for col_index in range(col_num):
-            base_map = col_base_map[col_index]
-            base_list = ['A', 'T', 'C', 'G', '-']
-            cur_col_list = []
-            for base in base_list:
-                if base not in base_map:
-                    cur_base_count = 0
+        if config.use_kmers:
+            for kmer_size in internal_kmer_sizes:
+                if config.use_terminal:
+                    # Represent internal_seq as k-mer frequencies.
+                    words_list = word_seq(internal_seq, kmer_size, stride=1)
+                    kmer_dic = generate_kmer_dic(kmer_size)
+                    num_list = generate_mat(words_list, kmer_dic)
+                    connected_num_list += num_list
                 else:
-                    cur_base_count = base_map[base]
-                cur_col_list.append(cur_base_count)
-            connected_num_list.append(cur_col_list)
-        features.append((connected_num_list, label, row_num, matrix_file))
-    return features
+                    # Represent seq as k-mer frequencies.
+                    words_list = word_seq(seq, kmer_size, stride=1)
+                    kmer_dic = generate_kmer_dic(kmer_size)
+                    num_list = generate_mat(words_list, kmer_dic)
+                    connected_num_list += num_list
 
-def get_matrix_feature_v0(sample_list):
-    kmer_sizes = config.kmer_sizes
-    features = []
-    for matrix_file, label in sample_list:
-        col_num = -1
-        row_num = 0
-        lines = []
-        with open(matrix_file, 'r') as f_r:
-            for line in f_r:
-                line = line.replace('\n', '').replace('\t', '')
-                col_num = len(line)
-                row_num += 1
-                lines.append(line)
+            for kmer_size in terminal_kmer_sizes:
+                if config.use_terminal:
+                    # Represent LTR and TIR as k-mer frequencies.
+                    words_list = word_seq(LTR_seq, kmer_size, stride=1)
+                    kmer_dic = generate_kmer_dic(kmer_size)
+                    num_list = generate_mat(words_list, kmer_dic)
+                    connected_num_list += num_list
 
-        connected_num_list = []
-        for kmer_size in kmer_sizes:
-            kmer_list = generate_kmer_list(kmer_size)
-            cur_col_num = col_num - kmer_size + 1
-            matrix = [[''] * cur_col_num for i in range(row_num)]
-            for row, line in enumerate(lines):
-                words_list = word_seq(line, kmer_size, stride=1)
-                for col in range(len(words_list)):
-                    matrix[row][col] = words_list[col]
-            for col in range(cur_col_num):
-                # cur_col_list = []
-                cur_col_kmer_count = {}
-                for row in range(row_num):
-                    cur_kmer = matrix[row][col]
-                    if cur_kmer not in cur_col_kmer_count:
-                        cur_col_kmer_count[cur_kmer] = 0
-                    cur_count = cur_col_kmer_count[cur_kmer]
-                    cur_col_kmer_count[cur_kmer] = cur_count + 1
-                for cur_kmer in kmer_list:
-                    if cur_kmer in cur_col_kmer_count:
-                        cur_kmer_count = cur_col_kmer_count[cur_kmer]
-                    else:
-                        cur_kmer_count = 0
-                    connected_num_list.append(cur_kmer_count)
-                # connected_num_list.append(cur_col_list)
-        features.append((connected_num_list, label, row_num, matrix_file))
-    return features
+                    words_list = word_seq(TIR_seq, kmer_size, stride=1)
+                    kmer_dic = generate_kmer_dic(kmer_size)
+                    num_list = generate_mat(words_list, kmer_dic)
+                    connected_num_list += num_list
 
-# one-hot
-def get_matrix_feature_v1(sample_list):
-    image_shape = config.image_shape
-    features = []
-    for matrix_file, label in sample_list:
-        row_num = image_shape[0]
-        col_num = image_shape[1]
-        lines = []
-        with open(matrix_file, 'r') as f_r:
-            for line in f_r:
-                line = line.replace('\n', '').replace('\t', '')
-                lines.append(line)
-                if len(lines) >= row_num:
-                    break
-        no_empty_row = len(lines)
+        if config.use_TSD:
+            # Convert TSD into one-hot encoding.
+            encoder = np.eye(4, dtype=np.int8)
+            max_length = config.max_tsd_length
+            encoded_TSD = np.zeros((max_length, 4), dtype=np.int8)
+            if TSD_seq == 'Unknown' or 'N' in TSD_seq:
+                TSD_seq = ''
+                padding_length = max_length - len(TSD_seq)
+                # TSD_len
+                connected_num_list.append(max_length+1)
+                for i in range(padding_length):
+                    encoded_TSD[len(TSD_seq) + i] = np.ones(4)
+            else:
+                # TSD_len
+                connected_num_list.append(TSD_len)
+                padding_length = max_length - len(TSD_seq)
+                for i, base in enumerate(TSD_seq):
+                    if base == 'A':
+                        encoded_TSD[i] = encoder[0]
+                    elif base == 'T':
+                        encoded_TSD[i] = encoder[1]
+                    elif base == 'C':
+                        encoded_TSD[i] = encoder[2]
+                    elif base == 'G':
+                        encoded_TSD[i] = encoder[3]
+                for i in range(padding_length):
+                    encoded_TSD[len(TSD_seq) + i] = np.zeros(4)
+            onehot_encoded_flat = encoded_TSD.reshape(-1)
+            connected_num_list = np.concatenate((connected_num_list, onehot_encoded_flat))
 
-        matrix = [['-'] * col_num for i in range(row_num)]
-        for row, line in enumerate(lines):
-            for col in range(len(line)):
-                matrix[row][col] = line[col]
+        if config.use_ends:
+            # Take the first and last 5 bp of a sequence to form a 10bp vector.
+            end_seq = seq[:5] + seq[-5:]
+            # Convert end_seq into one-hot encoding.
+            encoder = np.eye(4, dtype=np.int8)
+            max_length = 10
+            encoded_end_seq = np.zeros((max_length, 4), dtype=np.int8)
+            for i, base in enumerate(end_seq):
+                if base == 'A':
+                    encoded_end_seq[i] = encoder[0]
+                elif base == 'T':
+                    encoded_end_seq[i] = encoder[1]
+                elif base == 'C':
+                    encoded_end_seq[i] = encoder[2]
+                elif base == 'G':
+                    encoded_end_seq[i] = encoder[3]
+            onehot_encoded_flat = encoded_end_seq.reshape(-1)
+            connected_num_list = np.concatenate((connected_num_list, onehot_encoded_flat))
 
-        image = np.zeros((row_num, col_num, image_shape[2]))
-        base_value = {'-': (255, 255, 255), 'A': (59, 197, 53), 'T': (245, 97, 97), 'C': (88, 221, 255), 'G': (185, 80, 250)}
-        for col_index in range(col_num):
-            cur_col_list = []
-            for row_index in range(row_num):
-                base = matrix[row_index][col_index]
-                if base not in base_value:
-                    cur_val = (255, 255, 255)
-                else:
-                    cur_val = base_value[base]
-                # grayscale_value = int(cur_val * (255 / 4))
-                # image[row_index, col_index] = grayscale_value
-                image[row_index, col_index] = cur_val
-        out_dir = config.work_dir
-        if label == 1:
-            out_dir += '/positive'
-        else:
-            out_dir += '/negative'
-        if not os.path.exists(out_dir):
-            os.makedirs(out_dir)
-        name = os.path.basename(matrix_file)
-        image_path = out_dir + '/' + name + '.jpg'
-        image = Image.fromarray(np.uint8(image))
-        image.save(image_path)
-        features.append((image_path, label, no_empty_row, matrix_file))
-    return features
+        if config.use_domain:
+            # Convert domain set into one-hot encoding.
+            encoder = [0] * len(all_wicker_class)
+            for domain_label in domain_label_set:
+                domain_label_num = all_wicker_class[domain_label]
+                encoder[domain_label_num] = 1
+            connected_num_list = np.concatenate((connected_num_list, encoder))
 
-def get_matrix_feature_v2(sample_list):
-    features = []
-    for matrix_file, label in sample_list:
-        col_num = -1
-        row_num = 0
-        lines = []
-        no_empty_row = 0
-        with open(matrix_file, 'r') as f_r:
-            for line in f_r:
-                line = line.replace('\n', '')
-                col_num = len(line)
-                row_num += 1
-                lines.append(line)
-                if line != '-' * col_num:
-                    no_empty_row += 1
-
-        matrix = [[''] * col_num for i in range(row_num)]
-        for row, line in enumerate(lines):
-            for col in range(len(line)):
-                matrix[row][col] = line[col]
-
-        col_base_map = {}
-        for col_index in range(col_num):
-            if not col_base_map.__contains__(col_index):
-                col_base_map[col_index] = {}
-            base_map = col_base_map[col_index]
-            # Calculate the base composition ratio in the current column.
-            if len(base_map) == 0:
-                for row in range(row_num):
-                    cur_base = matrix[row][col_index]
-                    if not base_map.__contains__(cur_base):
-                        base_map[cur_base] = 0
-                    cur_count = base_map[cur_base]
-                    cur_count += 1
-                    base_map[cur_base] = cur_count
-            if not base_map.__contains__('-'):
-                base_map['-'] = 0
-
-        connected_num_list = []
-        for col_index in range(col_num):
-            base_map = col_base_map[col_index]
-            base_list = ['A', 'T', 'C', 'G', '-']
-            cur_col_list = []
-            for base in base_list:
-                if base not in base_map:
-                    cur_base_count = 0
-                else:
-                    cur_base_count = base_map[base]
-                cur_col_list.append(cur_base_count)
-            connected_num_list.append(cur_col_list)
-        features.append((connected_num_list, label, no_empty_row, matrix_file))
-    return features
-
-def get_matrix_feature_v31(sample_list):
-    features = []
-    for matrix_file, label in sample_list:
-        row_num = 0
-        cur_left_line = ''
-        cur_right_line = ''
-        left_lines = []
-        right_lines = []
-        with open(matrix_file, 'r') as f_r:
-            for line in f_r:
-                line = line.replace('\n', '')
-                parts = line.split('\t')
-                left_line = replace_non_atcg(parts[0])
-                right_line = replace_non_atcg(parts[1])
-                col_num = len(left_line)
-                left_lines.append(left_line)
-                right_lines.append(right_line)
-                cur_left_line += left_line
-                cur_right_line += right_line
-                row_num += 1
-        if row_num < 4:
-            continue
-
-        matrix = [[''] * col_num for i in range(row_num)]
-        for row, line in enumerate(left_lines):
-            for col in range(len(line)):
-                matrix[row][col] = line[col]
-
-        col_base_map = {}
-        for col_index in range(col_num):
-            if not col_base_map.__contains__(col_index):
-                col_base_map[col_index] = {}
-            base_map = col_base_map[col_index]
-            # Calculate the base composition ratio in the current column.
-            if len(base_map) == 0:
-                for row in range(row_num):
-                    cur_base = matrix[row][col_index]
-                    if not base_map.__contains__(cur_base):
-                        base_map[cur_base] = 0
-                    cur_count = base_map[cur_base]
-                    cur_count += 1
-                    base_map[cur_base] = cur_count
-            if not base_map.__contains__('-'):
-                base_map['-'] = 0
-
-        feature_num_list1 = []
-        for col_index in range(col_num):
-            base_map = col_base_map[col_index]
-            base_list = ['A', 'T', 'C', 'G', '-']
-            cur_col_list = []
-            for base in base_list:
-                if base not in base_map:
-                    cur_base_count = 0
-                else:
-                    cur_base_count = base_map[base]
-                cur_col_list.append(cur_base_count)
-            feature_num_list1.append(cur_col_list)
-
-        # ---------------------------
-
-        matrix = [[''] * col_num for i in range(row_num)]
-        for row, line in enumerate(right_lines):
-            for col in range(len(line)):
-                matrix[row][col] = line[col]
-
-        col_base_map = {}
-        for col_index in range(col_num):
-            if not col_base_map.__contains__(col_index):
-                col_base_map[col_index] = {}
-            base_map = col_base_map[col_index]
-            # Calculate the base composition ratio in the current column.
-            if len(base_map) == 0:
-                for row in range(row_num):
-                    cur_base = matrix[row][col_index]
-                    if not base_map.__contains__(cur_base):
-                        base_map[cur_base] = 0
-                    cur_count = base_map[cur_base]
-                    cur_count += 1
-                    base_map[cur_base] = cur_count
-            if not base_map.__contains__('-'):
-                base_map['-'] = 0
-
-        feature_num_list2 = []
-        for col_index in range(col_num):
-            base_map = col_base_map[col_index]
-            base_list = ['A', 'T', 'C', 'G', '-']
-            cur_col_list = []
-            for base in base_list:
-                if base not in base_map:
-                    cur_base_count = 0
-                else:
-                    cur_base_count = base_map[base]
-                cur_col_list.append(cur_base_count)
-            feature_num_list2.append(cur_col_list)
-
-        features.append((feature_num_list1, feature_num_list2, label, row_num, matrix_file))
-    return features
-
-def get_matrix_feature_v3(sample_list):
-    features = []
-    for matrix_file, label in sample_list:
-        row_num = 0
-        cur_left_line = ''
-        cur_right_line = ''
-        left_lines = []
-        right_lines = []
-        with open(matrix_file, 'r') as f_r:
-            for line in f_r:
-                line = line.replace('\n', '')
-                parts = line.split('\t')
-                left_line = replace_non_atcg(parts[0])
-                right_line = replace_non_atcg(parts[1])
-                col_num = len(left_line)
-                left_lines.append(left_line)
-                right_lines.append(right_line)
-                cur_left_line += left_line
-                cur_right_line += right_line
-                row_num += 1
-        if row_num <= 5:
-            continue
-
-        feature_num_list1 = []
-        for kmer_size in config.kmer_sizes:
-            kmer_dic = generate_kmer_dic(kmer_size)
-            words_lists = []
-            for left_line in left_lines:
-                words_list = word_seq(left_line, kmer_size, stride=1)
-                words_lists += words_list
-            num_list = generate_mat(words_lists, kmer_dic)
-            feature_num_list1 += num_list[:-1]
-
-        # matrix = [[''] * col_num for i in range(row_num)]
-        # for row, line in enumerate(left_lines):
-        #     for col in range(len(line)):
-        #         matrix[row][col] = line[col]
-        #
-        # col_base_map = {}
-        # for col_index in range(col_num):
-        #     if not col_base_map.__contains__(col_index):
-        #         col_base_map[col_index] = {}
-        #     base_map = col_base_map[col_index]
-        #     # Calculate the base composition ratio in the current column.
-        #     if len(base_map) == 0:
-        #         for row in range(row_num):
-        #             cur_base = matrix[row][col_index]
-        #             if not base_map.__contains__(cur_base):
-        #                 base_map[cur_base] = 0
-        #             cur_count = base_map[cur_base]
-        #             cur_count += 1
-        #             base_map[cur_base] = cur_count
-        #     if not base_map.__contains__('-'):
-        #         base_map['-'] = 0
-        #
-        # for col_index in range(col_num):
-        #     base_map = col_base_map[col_index]
-        #     base_list = ['A', 'T', 'C', 'G', '-']
-        #     cur_col_list = []
-        #     for base in base_list:
-        #         if base not in base_map:
-        #             cur_base_count = 0
-        #         else:
-        #             cur_base_count = base_map[base]
-        #         cur_col_list.append(cur_base_count)
-        #     feature_num_list1 += cur_col_list
-
-        # -----------------------------------------
-
-        feature_num_list2 = []
-        for kmer_size in config.kmer_sizes:
-            words_lists = []
-            kmer_dic = generate_kmer_dic(kmer_size)
-            for right_line in right_lines:
-                words_list = word_seq(right_line, kmer_size, stride=1)
-                words_lists += words_list
-            num_list = generate_mat(words_lists, kmer_dic)
-            feature_num_list2 += num_list[:-1]
-
-
-        # matrix = [[''] * col_num for i in range(row_num)]
-        # for row, line in enumerate(right_lines):
-        #     for col in range(len(line)):
-        #         matrix[row][col] = line[col]
-        #
-        # col_base_map = {}
-        # for col_index in range(col_num):
-        #     if not col_base_map.__contains__(col_index):
-        #         col_base_map[col_index] = {}
-        #     base_map = col_base_map[col_index]
-        #     # Calculate the base composition ratio in the current column.
-        #     if len(base_map) == 0:
-        #         for row in range(row_num):
-        #             cur_base = matrix[row][col_index]
-        #             if not base_map.__contains__(cur_base):
-        #                 base_map[cur_base] = 0
-        #             cur_count = base_map[cur_base]
-        #             cur_count += 1
-        #             base_map[cur_base] = cur_count
-        #     if not base_map.__contains__('-'):
-        #         base_map['-'] = 0
-        #
-        # for col_index in range(col_num):
-        #     base_map = col_base_map[col_index]
-        #     base_list = ['A', 'T', 'C', 'G', '-']
-        #     cur_col_list = []
-        #     for base in base_list:
-        #         if base not in base_map:
-        #             cur_base_count = 0
-        #         else:
-        #             cur_base_count = base_map[base]
-        #         cur_col_list.append(cur_base_count)
-        #     feature_num_list2 += cur_col_list
-
-
-        features.append((feature_num_list1, feature_num_list2, label, row_num, matrix_file))
-    return features
-
-def get_matrix_feature_v4(sample_list):
-    features = []
-    kmer_sizes = config.kmer_sizes
-    for matrix_file, label in sample_list:
-        row_num = 0
-        col_num = 0
-        lines = []
-        with open(matrix_file, 'r') as f_r:
-            for line in f_r:
-                line = line.replace('\n', '')
-                line = replace_non_atcg(line)
-                row_num += 1
-                lines.append(line)
-
-        connected_num_list = []
-        for kmer_size in kmer_sizes:
-            kmer_matrix = []
-            for line in lines:
-                words_list = word_seq(line, kmer_size, stride=1)
-                kmer_matrix.append(words_list)
-                col_num = len(words_list)
-            for i in range(col_num):
-                diff_kmer_set = set()
-                for j in range(row_num):
-                    diff_kmer_set.add(kmer_matrix[j][i])
-                connected_num_list.append(len(diff_kmer_set))
-
-        col_num = 100
-        matrix = [[''] * col_num for i in range(row_num)]
-        for row, line in enumerate(lines):
-            for col in range(len(line)):
-                matrix[row][col] = line[col]
-
-        col_base_map = {}
-        for col_index in range(col_num):
-            if not col_base_map.__contains__(col_index):
-                col_base_map[col_index] = {}
-            base_map = col_base_map[col_index]
-            # Calculate the base composition ratio in the current column.
-            if len(base_map) == 0:
-                for row in range(row_num):
-                    cur_base = matrix[row][col_index]
-                    if not base_map.__contains__(cur_base):
-                        base_map[cur_base] = 0
-                    cur_count = base_map[cur_base]
-                    cur_count += 1
-                    base_map[cur_base] = cur_count
-            if not base_map.__contains__('-'):
-                base_map['-'] = 0
-
-        for col_index in range(col_num):
-            base_map = col_base_map[col_index]
-            base_list = ['A', 'T', 'C', 'G', '-']
-            cur_col_list = []
-            for base in base_list:
-                if base not in base_map:
-                    cur_base_count = 0
-                else:
-                    cur_base_count = base_map[base]
-                cur_col_list.append(cur_base_count)
-            connected_num_list += cur_col_list
-        features.append((connected_num_list, label, row_num, matrix_file))
-    return features
-
-def get_matrix_feature_v5(sample_list):
-    features = []
-    kmer_sizes = config.kmer_sizes
-    for matrix_file, label in sample_list:
-        row_num = 0
-        col_num = 0
-        lines = []
-        with open(matrix_file, 'r') as f_r:
-            for line in f_r:
-                line = line.replace('\n', '')
-                line = replace_non_atcg(line)
-                row_num += 1
-                lines.append(line)
-
-        cnn_num_list = []
-        for kmer_size in kmer_sizes:
-            kmer_matrix = []
-            for line in lines:
-                words_list = word_seq(line, kmer_size, stride=1)
-                kmer_matrix.append(words_list)
-                col_num = len(words_list)
-            for i in range(col_num):
-                diff_kmer_set = set()
-                for j in range(row_num):
-                    diff_kmer_set.add(kmer_matrix[j][i])
-                cnn_num_list.append(len(diff_kmer_set))
-
-
-        lstm_num_list = []
-        col_num = 100
-        matrix = [[''] * col_num for i in range(row_num)]
-        for row, line in enumerate(lines):
-            for col in range(len(line)):
-                matrix[row][col] = line[col]
-
-        col_base_map = {}
-        for col_index in range(col_num):
-            if not col_base_map.__contains__(col_index):
-                col_base_map[col_index] = {}
-            base_map = col_base_map[col_index]
-            # Calculate the base composition ratio in the current column.
-            if len(base_map) == 0:
-                for row in range(row_num):
-                    cur_base = matrix[row][col_index]
-                    if not base_map.__contains__(cur_base):
-                        base_map[cur_base] = 0
-                    cur_count = base_map[cur_base]
-                    cur_count += 1
-                    base_map[cur_base] = cur_count
-            if not base_map.__contains__('-'):
-                base_map['-'] = 0
-
-        for col_index in range(col_num):
-            base_map = col_base_map[col_index]
-            base_list = ['A', 'T', 'C', 'G', '-']
-            cur_col_list = []
-            for base in base_list:
-                if base not in base_map:
-                    cur_base_count = 0
-                else:
-                    cur_base_count = base_map[base]
-                cur_col_list.append(cur_base_count)
-            lstm_num_list += cur_col_list
-        lstm_num_list = np.array(lstm_num_list)
-        lstm_num_list = normalization(lstm_num_list)
-        features.append((cnn_num_list, lstm_num_list, label, row_num, matrix_file))
-    return features
-
-def get_matrix_feature_v6(sample_list):
-    kmer_sizes = config.kmer_sizes
-    features = []
-    for matrix_file, label in sample_list:
-        row_num = 0
-        cur_left_line = ''
-        cur_right_line = ''
-        left_lines = []
-        right_lines = []
-        with open(matrix_file, 'r') as f_r:
-            for line in f_r:
-                line = line.replace('\n', '')
-                parts = line.split('\t')
-                left_line = replace_non_atcg(parts[0])
-                right_line = replace_non_atcg(parts[1])
-                col_num = len(left_line)
-                left_lines.append(left_line)
-                right_lines.append(right_line)
-                cur_left_line += left_line
-                cur_right_line += right_line
-                row_num += 1
-
-
-        feature_num_list1 = []
-        for kmer_size in kmer_sizes:
-            col_num = 0
-            kmer_matrix = []
-            for line in left_lines:
-                words_list = word_seq(line, kmer_size, stride=1)
-                kmer_matrix.append(words_list)
-                col_num = len(words_list)
-            for i in range(col_num):
-                sequences = []
-                for j in range(row_num):
-                    sequences.append(kmer_matrix[j][i])
-                hamming_distance_threshold = int(len(sequences[0]) * 0.2)
-                cluster_num, random_cluster_num = cluster_sequences(sequences, hamming_distance_threshold,
-                                                                    min_samples_threshold=1)
-                feature_num_list1.append([cluster_num, random_cluster_num])
-
-
-        # -----------------------------------------
-        feature_num_list2 = []
-        for kmer_size in kmer_sizes:
-            col_num = 0
-            kmer_matrix = []
-            for line in right_lines:
-                words_list = word_seq(line, kmer_size, stride=1)
-                kmer_matrix.append(words_list)
-                col_num = len(words_list)
-            for i in range(col_num):
-                sequences = []
-                for j in range(row_num):
-                    sequences.append(kmer_matrix[j][i])
-                hamming_distance_threshold = int(len(sequences[0]) * 0.2)
-                cluster_num, random_cluster_num = cluster_sequences(sequences, hamming_distance_threshold,
-                                                                    min_samples_threshold=1)
-                feature_num_list2.append([cluster_num, random_cluster_num])
-
-        features.append((feature_num_list1, feature_num_list2, label, row_num, matrix_file))
-    return features
-
-
-
-def sequence_distance(seq1, seq2):
-    # 这里使用简单的汉明距离
-    return sum(el1 != el2 for el1, el2 in zip(seq1, seq2)) + abs(len(seq1) - len(seq2))
-
-def generate_distance_matrix(sequences):
-    # 计算距离矩阵
-    n = len(sequences)
-    distance_matrix = np.zeros((n, n))
-
-    for i in range(n):
-        for j in range(i + 1, n):
-            distance = sequence_distance(sequences[i], sequences[j])
-            distance_matrix[i, j] = distance
-            distance_matrix[j, i] = distance
-    return distance_matrix
-
-def cluster_sequences(sequences, hamming_distance_threshold, min_samples_threshold=1):
-
-    distance_matrix = generate_distance_matrix(sequences)
-    # print("Distance Matrix:")
-    # print(distance_matrix)
-
-    # 初始化DBSCAN算法，使用预计算的距离矩阵
-    dbscan = DBSCAN(eps=hamming_distance_threshold, min_samples=min_samples_threshold, metric='precomputed')
-
-    # 拟合距离矩阵
-    dbscan.fit(distance_matrix)
-    labels = dbscan.labels_
-    # 聚类结果
-    # print("Labels:", dbscan.labels_)
-
-    # cluster_indexes 保存每个标签对应的序列索引号
-    cluster_indexes = {}
-    for i, label in enumerate(labels):
-        if label not in cluster_indexes:
-            cluster_indexes[label] = []
-        cur_indexes = cluster_indexes[label]
-        cur_indexes.append(i)
-
-    # labels = np.array(labels)
-    # # 找出不同的数值
-    # unique_labels = np.unique(labels)
-    # cluster_num = len(unique_labels)
-    # print(f"cluster num: {cluster_num}")  # 输出不同数值的数量
-    #
-    # # 统计每个数值出现的次数
-    # counts = np.bincount(labels)
-    #
-    # # 找出只出现一次的数值数量
-    # single_occurrence_count = np.sum(counts == 1)
-    # print(f"random cluster num: {single_occurrence_count}")  # 输出只出现一次的值的数量
-    #
-    #random_cluster_num = single_occurrence_count
-
-    return cluster_indexes
-
-# 归一化
-def normalization(data):
-    _range = np.max(data) - np.min(data)
-    return (data - np.min(data)) / _range
-
-# 标准化
-def standardization(data):
-    mu = np.mean(data, axis=0)
-    sigma = np.std(data, axis=0)
-    return (data - mu) / sigma
+        group_dict[seq_name] = connected_num_list
+    return group_dict
 
 def get_gpu_config(start_gpu_num, use_gpu_num):
     gpus = tf.config.experimental.list_physical_devices('GPU')
@@ -942,236 +378,57 @@ def get_gpu_config(start_gpu_num, use_gpu_num):
     strategy = tf.distribute.MirroredStrategy(devices=use_devices)
     # print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
 
-
-def get_feature_len(row_num, col_num):
+def get_feature_len():
     # Obtain CNN input dimensions
     X_feature_len = 0
-    X_feature_len += 5 * 1 * col_num + 1
+    # Dimensions of TE terminal and internal sequences
+    if config.use_kmers != 0:
+        for kmer_size in config.internal_kmer_sizes:
+            X_feature_len += pow(4, kmer_size)
+        if config.use_terminal != 0:
+            for i in range(2):
+                for kmer_size in config.terminal_kmer_sizes:
+                    X_feature_len += pow(4, kmer_size)
+    if config.use_TSD != 0:
+        X_feature_len += config.max_tsd_length * 4 + 1
+    # if config.use_minority != 0:
+    #     X_feature_len += len(config.minority_labels_class)
+    if config.use_domain != 0:
+        X_feature_len += len(config.all_wicker_class)
+    if config.use_ends != 0:
+        X_feature_len += 10 * 4
     return X_feature_len
 
 def split_list_into_groups(lst, group_size):
     return [lst[i:i+group_size] for i in range(0, len(lst), group_size)]
 
-
-def find_files_recursively(root_dir, file_extension=''):
-    """
-    递归搜索指定目录及其子目录中的文件，并返回文件路径列表。
-
-    参数:
-    root_dir (str): 根目录路径。
-    file_extension (str): 可选的文件扩展名，例如 '.txt'。如果不指定，则搜索所有文件。
-
-    返回:
-    files (list): 匹配的文件路径列表。
-    """
-    files = []
-
-    # 遍历目录中的每一个条目
-    for root, dirs, file_names in os.walk(root_dir):
-        # 过滤出具有指定扩展名的文件
-        if file_extension:
-            filtered_file_names = [f for f in file_names if f.endswith(file_extension)]
-        else:
-            filtered_file_names = file_names
-
-            # 为每个匹配的文件构建完整的文件路径，并添加到列表中
-        for file_name in filtered_file_names:
-            files.append(os.path.join(root, file_name))
-
-    return files
-
-def generate_feature_mats(positive_dir, negative_dir, ex):
-    seq_images = []
+def generate_feature_mats(X, Y, seq_names, minority_labels_class, all_wicker_class, internal_kmer_sizes, terminal_kmer_sizes, ex):
+    seq_mats = {}
     jobs = []
+    grouped_X = split_list_into_groups(X, 100)
 
-    sample_list = []
-    file_extension = '.matrix'
-    all_matrix_files = find_files_recursively(positive_dir, file_extension)
-    for matrix_file in all_matrix_files:
-        sample_list.append((matrix_file, 1))
-    all_matrix_files = find_files_recursively(negative_dir, file_extension)
-    for matrix_file in all_matrix_files:
-        sample_list.append((matrix_file, 0))
-
-    grouped_sample_list = split_list_into_groups(sample_list, 1000)
-
-    # 加载特征
-    for sample_list in grouped_sample_list:
-        job = ex.submit(get_matrix_feature_v3, sample_list)
+    for grouped_x in grouped_X:
+        job = ex.submit(get_batch_kmer_freq_v1, grouped_x, internal_kmer_sizes, terminal_kmer_sizes, minority_labels_class, all_wicker_class)
         jobs.append(job)
     ex.shutdown(wait=True)
 
     for job in as_completed(jobs):
-        cur_features = job.result()
-        seq_images += cur_features
-
-    random.shuffle(seq_images)
+        cur_group_dict = job.result()
+        seq_mats.update(cur_group_dict)
 
     final_X = []
     final_Y = []
-    final_row_num = []
-    final_matrix_file = []
-    for cur_lstm, cur_label, row_num, matrix_file in seq_images:
-        final_X.append(cur_lstm)
-        final_Y.append(cur_label)
-        final_row_num.append(row_num)
-        final_matrix_file.append(matrix_file)
-    final_X = np.array(final_X)
-    final_Y = np.array(final_Y)
-    final_row_num = np.array(final_row_num)
-    final_matrix_file = np.array(final_matrix_file)
-
-    # X_min = final_X.min(axis=0)
-    # X_max = final_X.max(axis=0)
-    # final_X = (final_X - X_min) / (X_max - X_min)
-
-    return final_X, final_Y, final_row_num, final_matrix_file
-
-def generate_feature_mats_hybrid(positive_dir, negative_dir, ex):
-    seq_images = []
-    jobs = []
-
-    sample_list = []
-    file_extension = '.matrix'
-    all_matrix_files = find_files_recursively(positive_dir, file_extension)
-    for matrix_file in all_matrix_files:
-        sample_list.append((matrix_file, 1))
-    all_matrix_files = find_files_recursively(negative_dir, file_extension)
-    for matrix_file in all_matrix_files:
-        sample_list.append((matrix_file, 0))
-
-    grouped_sample_list = split_list_into_groups(sample_list, 1000)
-
-    # 加载特征
-    for sample_list in grouped_sample_list:
-        job = ex.submit(get_matrix_feature_v3, sample_list)
-        jobs.append(job)
-    ex.shutdown(wait=True)
-
-    for job in as_completed(jobs):
-        cur_features = job.result()
-        seq_images += cur_features
-
-    random.shuffle(seq_images)
-
-    final_X1 = []
-    final_X2 = []
-    final_Y = []
-    final_row_num = []
-    final_matrix_file = []
-    for cur_cnn1, cur_cnn2, cur_label, row_num, matrix_file in seq_images:
-        final_X1.append(cur_cnn1)
-        final_X2.append(cur_cnn2)
-        final_Y.append(cur_label)
-        final_row_num.append(row_num)
-        final_matrix_file.append(matrix_file)
-    final_X1 = np.array(final_X1)
-    final_X2 = np.array(final_X2)
-    final_Y = np.array(final_Y)
-    final_row_num = np.array(final_row_num)
-    final_matrix_file = np.array(final_matrix_file)
-
-    # X_min = final_X1.min(axis=0)
-    # X_max = final_X1.max(axis=0)
-    # final_X1 = (final_X1 - X_min) / (X_max - X_min)
-    #
-    # X_min = final_X2.min(axis=0)
-    # X_max = final_X2.max(axis=0)
-    # final_X2 = (final_X2 - X_min) / (X_max - X_min)
-
-    return final_X1, final_X2, final_Y, final_row_num, final_matrix_file
-
-def generate_predict_feature_mats(predict_dir, ex):
-    seq_images = []
-    jobs = []
-
-    sample_list = []
-    file_extension = '.matrix'
-    all_matrix_files = find_files_recursively(predict_dir, file_extension)
-    for matrix_file in all_matrix_files:
-        sample_list.append((matrix_file, 0))
-
-    grouped_sample_list = split_list_into_groups(sample_list, 1000)
-
-    # 加载特征
-    for sample_list in grouped_sample_list:
-        job = ex.submit(get_matrix_feature_v1, sample_list)
-        jobs.append(job)
-    ex.shutdown(wait=True)
-
-    for job in as_completed(jobs):
-        cur_features = job.result()
-        seq_images += cur_features
-
-    random.shuffle(seq_images)
-
-    final_X = []
-    final_Y = []
-    final_row_num = []
-    final_matrix_file = []
-    for cur_lstm, cur_label, row_num, matrix_file in seq_images:
-        final_X.append(cur_lstm)
-        final_Y.append(cur_label)
-        final_row_num.append(row_num)
-        final_matrix_file.append(matrix_file)
-    final_X = np.array(final_X)
-    final_Y = np.array(final_Y)
-    final_row_num = np.array(final_row_num)
-    final_matrix_file = np.array(final_matrix_file)
-
-    # X_min = final_X.min(axis=0)
-    # X_max = final_X.max(axis=0)
-    # final_X = (final_X - X_min) / (X_max - X_min)
-    return final_X, final_Y, final_row_num, final_matrix_file
-
-def generate_predict_feature_mats_hybrid(predict_dir, ex):
-    seq_images = []
-    jobs = []
-
-    sample_list = []
-    file_extension = '.matrix'
-    all_matrix_files = find_files_recursively(predict_dir, file_extension)
-    for matrix_file in all_matrix_files:
-        sample_list.append((matrix_file, 0))
-
-    grouped_sample_list = split_list_into_groups(sample_list, 1000)
-
-    # 加载特征
-    for sample_list in grouped_sample_list:
-        job = ex.submit(get_matrix_feature_v3, sample_list)
-        jobs.append(job)
-    ex.shutdown(wait=True)
-
-    for job in as_completed(jobs):
-        cur_features = job.result()
-        seq_images += cur_features
-
-    random.shuffle(seq_images)
-
-    final_X1 = []
-    final_X2 = []
-    final_Y = []
-    final_row_num = []
-    final_matrix_file = []
-    for cur_cnn1, cur_cnn2, cur_label, row_num, matrix_file in seq_images:
-        final_X1.append(cur_cnn1)
-        final_X2.append(cur_cnn2)
-        final_Y.append(cur_label)
-        final_row_num.append(row_num)
-        final_matrix_file.append(matrix_file)
-    final_X1 = np.array(final_X1)
-    final_X2 = np.array(final_X2)
-    final_Y = np.array(final_Y)
-    final_row_num = np.array(final_row_num)
-    final_matrix_file = np.array(final_matrix_file)
-
-    # X_min = final_X.min(axis=0)
-    # X_max = final_X.max(axis=0)
-    # final_X = (final_X - X_min) / (X_max - X_min)
-    return final_X1, final_X2, final_Y, final_row_num, final_matrix_file
+    for item in seq_names:
+        seq_name = item[0]
+        x = seq_mats[seq_name]
+        final_X.append(x)
+        label = Y[seq_name]
+        label_num = all_wicker_class[label]
+        final_Y.append(label_num)
+    return np.array(final_X), np.array(final_Y)
 
 def replace_non_atcg(sequence):
-    return re.sub("[^ATCG]", "-", sequence)
+    return re.sub("[^ATCG]", "", sequence)
 
 def getRMToWicker(RM_Wicker_struct):
     # 3.2 Convert Dfam classification names into Wicker format.
@@ -1673,13 +930,42 @@ def get_domain_info(cons, lib, output_table, threads, temp_dir):
     os.makedirs(temp_dir)
 
     consensus_contignames, consensus_contigs = read_fasta_v1(cons)
+    # Copy the lib to the output directory. If the current process involves
+    # evaluation, then it's necessary to filter out domains from lib
+    # that contain test species
+    temp_lib = temp_dir + '/RepeatPeps.lib'
+    os.system('cp ' + lib + ' ' + temp_lib)
+    if config.is_predict == 0:
+        test_species_set = set()
+        for name in consensus_contignames:
+            parts = name.split('\t')
+            species = parts[2]
+            test_species_set.add(species)
+        # filter out test species from the protein library of RepeatMasker.
+        lib_contigNames, lib_contigs = read_fasta_v1(lib)
+        rm_contigs = {}
+        for name in lib_contigNames:
+            pattern = r'\[(.*?)\]'
+            match = re.search(pattern, name)
+            if match:
+                species = match.group(1)
+            else:
+                species = 'Unknown'
+            # filter content in '()'
+            pattern = r'\([^)]*\)'
+            species = re.sub(pattern, '', species)
+            species = re.sub(r'\s+', ' ', species).strip()
+            if species not in test_species_set:
+                rm_contigs[name] = lib_contigs[name]
+        store_fasta(rm_contigs, temp_lib)
 
+    lib = temp_lib
     blast_db_command = 'makeblastdb -dbtype prot -in ' + lib
     os.system(blast_db_command + ' > /dev/null 2>&1')
     # 1. Divide the cons, and for each block, use blastx -num_threads 1 -evalue 1e-20 to compare cons with domain.
     partitions_num = int(threads)
     data_partitions = PET(consensus_contigs.items(), partitions_num)
-    skip_gap_threshold = 1 - 0.8
+    merge_distance = 100
     file_list = []
     ex = ProcessPoolExecutor(threads)
     jobs = []
@@ -1691,7 +977,7 @@ def get_domain_info(cons, lib, output_table, threads, temp_dir):
         cur_output = temp_dir + '/'+str(partition_index)+'.out'
         cur_table = temp_dir + '/' + str(partition_index) + '.tbl'
         cur_file = (cur_consensus_path, lib, cur_output, cur_table)
-        job = ex.submit(multiple_alignment_blastx_v1, cur_file, skip_gap_threshold)
+        job = ex.submit(multiple_alignment_blastx_v1, cur_file, merge_distance)
         jobs.append(job)
     ex.shutdown(wait=True)
 
@@ -1711,286 +997,304 @@ def get_domain_info(cons, lib, output_table, threads, temp_dir):
         exit(1)
 
 
-def multiple_alignment_blastx_v1(repeats_path, skip_gap_threshold):
-    split_repeats_path = repeats_path[0]
-    protein_db_path = repeats_path[1]
-    blastx2Results_path = repeats_path[2]
-    cur_table = repeats_path[3]
-    align_command = 'blastx -db ' + protein_db_path + ' -num_threads ' \
-                    + str(1) + ' -evalue 1e-20 -query ' + split_repeats_path + ' -outfmt 6 > ' + blastx2Results_path
-    #os.system(align_command)
-    run_command(align_command)
+def multiple_alignment_blastx_v1(repeats_path, merge_distance):
+    try:
+        split_repeats_path = repeats_path[0]
+        protein_db_path = repeats_path[1]
+        blastx2Results_path = repeats_path[2]
+        cur_table = repeats_path[3]
+        align_command = 'blastx -db ' + protein_db_path + ' -num_threads ' \
+                        + str(1) + ' -evalue 1e-20 -query ' + split_repeats_path + ' -outfmt 6 > ' + blastx2Results_path
+        #os.system(align_command)
+        run_command(align_command)
 
-    p_names, p_contigs = read_fasta(protein_db_path)
+        # extract protein name and species
+        protein_species_dict = {}
+        p_names, p_contigs = read_fasta_v1(protein_db_path)
+        for name in p_names:
+            protein_name = name.split(' ')[0]
+            pattern = r'\[(.*?)\]'  # 匹配方括号内的任意字符，非贪婪模式
+            match = re.search(pattern, name)
+            if match:
+                species = match.group(1)  # 获取匹配到的第一个子组
+            else:
+                species = 'Unknown'
+            protein_species_dict[protein_name] = species
 
-    # Merge segmented blastx alignments.
-    query_names, query_contigs = read_fasta(split_repeats_path)
+        # extract TE name and species
+        TE_species_dict = {}
+        query_names1, query_contigs1 = read_fasta_v1(split_repeats_path)
+        for name in query_names1:
+            parts = name.split('\t')
+            TE_species_dict[parts[0]] = parts[2]
 
-    # parse blastn output, determine the repeat boundary
-    # query_records = {query_name: {subject_name: [(q_start, q_end, s_start, s_end), (q_start, q_end, s_start, s_end), (q_start, q_end, s_start, s_end)] }}
-    query_records = {}
-    with open(blastx2Results_path, 'r') as f_r:
-        for idx, line in enumerate(f_r):
-            # print('current line idx: %d' % (idx))
-            parts = line.split('\t')
-            query_name = parts[0]
-            subject_name = parts[1]
-            identity = float(parts[2])
-            alignment_len = int(parts[3])
-            q_start = int(parts[6])
-            q_end = int(parts[7])
-            s_start = int(parts[8])
-            s_end = int(parts[9])
-            if not query_records.__contains__(query_name):
-                query_records[query_name] = {}
+        fixed_extend_base_threshold = merge_distance
+        # Merge segmented blastx alignments.
+        query_names, query_contigs = read_fasta(split_repeats_path)
+
+        # parse blastn output, determine the repeat boundary
+        # query_records = {query_name: {subject_name: [(q_start, q_end, s_start, s_end), (q_start, q_end, s_start, s_end), (q_start, q_end, s_start, s_end)] }}
+        query_records = {}
+        with open(blastx2Results_path, 'r') as f_r:
+            for idx, line in enumerate(f_r):
+                # print('current line idx: %d' % (idx))
+                parts = line.split('\t')
+                query_name = parts[0]
+                subject_name = parts[1]
+                identity = float(parts[2])
+                alignment_len = int(parts[3])
+                q_start = int(parts[6])
+                q_end = int(parts[7])
+                s_start = int(parts[8])
+                s_end = int(parts[9])
+                if not query_records.__contains__(query_name):
+                    query_records[query_name] = {}
+                subject_dict = query_records[query_name]
+
+                if not subject_dict.__contains__(subject_name):
+                    subject_dict[subject_name] = []
+                subject_pos = subject_dict[subject_name]
+                subject_pos.append((q_start, q_end, s_start, s_end))
+        f_r.close()
+
+        keep_longest_query = {}
+        longest_repeats = {}
+        for idx, query_name in enumerate(query_records.keys()):
+            query_len = len(query_contigs[query_name])
+            # print('total query size: %d, current query name: %s, idx: %d' % (len(query_records), query_name, idx))
+
             subject_dict = query_records[query_name]
 
-            if not subject_dict.__contains__(subject_name):
-                subject_dict[subject_name] = []
-            subject_pos = subject_dict[subject_name]
-            subject_pos.append((q_start, q_end, s_start, s_end))
-    f_r.close()
+            # if there are more than one longest query overlap with the final longest query over 90%,
+            # then it probably the true TE
+            longest_queries = []
+            for subject_name in subject_dict.keys():
+                subject_pos = subject_dict[subject_name]
+                # subject_pos.sort(key=lambda x: (x[2], x[3]))
 
-    keep_longest_query = {}
-    longest_repeats = {}
-    for idx, query_name in enumerate(query_records.keys()):
-        query_len = len(query_contigs[query_name])
-        # print('total query size: %d, current query name: %s, idx: %d' % (len(query_records), query_name, idx))
+                # cluster all closed fragments, split forward and reverse records
+                forward_pos = []
+                reverse_pos = []
+                for pos_item in subject_pos:
+                    if pos_item[0] > pos_item[1]:
+                        reverse_pos.append(pos_item)
+                    else:
+                        forward_pos.append(pos_item)
+                forward_pos.sort(key=lambda x: (x[2], x[3]))
+                reverse_pos.sort(key=lambda x: (-x[0], -x[1]))
 
-        subject_dict = query_records[query_name]
-
-        # if there are more than one longest query overlap with the final longest query over 90%,
-        # then it probably the true TE
-        longest_queries = []
-        for subject_name in subject_dict.keys():
-            subject_len = len(p_contigs[subject_name])
-            fixed_extend_base_threshold = skip_gap_threshold * subject_len * 3
-
-
-            subject_pos = subject_dict[subject_name]
-            # subject_pos.sort(key=lambda x: (x[2], x[3]))
-
-            # cluster all closed fragments, split forward and reverse records
-            forward_pos = []
-            reverse_pos = []
-            for pos_item in subject_pos:
-                if pos_item[0] > pos_item[1]:
-                    reverse_pos.append(pos_item)
-                else:
-                    forward_pos.append(pos_item)
-            forward_pos.sort(key=lambda x: (x[2], x[3]))
-            reverse_pos.sort(key=lambda x: (-x[0], -x[1]))
-
-            clusters = {}
-            cluster_index = 0
-            for k, frag in enumerate(forward_pos):
-                if not clusters.__contains__(cluster_index):
-                    clusters[cluster_index] = []
-                cur_cluster = clusters[cluster_index]
-                if k == 0:
-                    cur_cluster.append(frag)
-                else:
-                    is_closed = False
-                    for exist_frag in reversed(cur_cluster):
-                        if (frag[0] - exist_frag[1] < fixed_extend_base_threshold):
-                            is_closed = True
-                            break
-                    if is_closed:
+                clusters = {}
+                cluster_index = 0
+                for k, frag in enumerate(forward_pos):
+                    if not clusters.__contains__(cluster_index):
+                        clusters[cluster_index] = []
+                    cur_cluster = clusters[cluster_index]
+                    if k == 0:
                         cur_cluster.append(frag)
                     else:
-                        cluster_index += 1
-                        if not clusters.__contains__(cluster_index):
-                            clusters[cluster_index] = []
-                        cur_cluster = clusters[cluster_index]
-                        cur_cluster.append(frag)
+                        is_closed = False
+                        for exist_frag in reversed(cur_cluster):
+                            if (frag[0] - exist_frag[1] < fixed_extend_base_threshold):
+                                is_closed = True
+                                break
+                        if is_closed:
+                            cur_cluster.append(frag)
+                        else:
+                            cluster_index += 1
+                            if not clusters.__contains__(cluster_index):
+                                clusters[cluster_index] = []
+                            cur_cluster = clusters[cluster_index]
+                            cur_cluster.append(frag)
 
-            cluster_index += 1
-            for k, frag in enumerate(reverse_pos):
-                if not clusters.__contains__(cluster_index):
-                    clusters[cluster_index] = []
-                cur_cluster = clusters[cluster_index]
-                if k == 0:
-                    cur_cluster.append(frag)
-                else:
-                    is_closed = False
-                    for exist_frag in reversed(cur_cluster):
-                        if (exist_frag[1] - frag[0] < fixed_extend_base_threshold):
-                            is_closed = True
-                            break
-                    if is_closed:
+                cluster_index += 1
+                for k, frag in enumerate(reverse_pos):
+                    if not clusters.__contains__(cluster_index):
+                        clusters[cluster_index] = []
+                    cur_cluster = clusters[cluster_index]
+                    if k == 0:
                         cur_cluster.append(frag)
                     else:
-                        cluster_index += 1
-                        if not clusters.__contains__(cluster_index):
-                            clusters[cluster_index] = []
-                        cur_cluster = clusters[cluster_index]
-                        cur_cluster.append(frag)
+                        is_closed = False
+                        for exist_frag in reversed(cur_cluster):
+                            if (exist_frag[1] - frag[0] < fixed_extend_base_threshold):
+                                is_closed = True
+                                break
+                        if is_closed:
+                            cur_cluster.append(frag)
+                        else:
+                            cluster_index += 1
+                            if not clusters.__contains__(cluster_index):
+                                clusters[cluster_index] = []
+                            cur_cluster = clusters[cluster_index]
+                            cur_cluster.append(frag)
 
-            for cluster_index in clusters.keys():
-                cur_cluster = clusters[cluster_index]
-                cur_cluster.sort(key=lambda x: (x[2], x[3]))
+                for cluster_index in clusters.keys():
+                    cur_cluster = clusters[cluster_index]
+                    cur_cluster.sort(key=lambda x: (x[2], x[3]))
 
-                cluster_longest_query_start = -1
-                cluster_longest_query_end = -1
-                cluster_longest_query_len = -1
+                    cluster_longest_query_start = -1
+                    cluster_longest_query_end = -1
+                    cluster_longest_query_len = -1
 
-                cluster_longest_subject_start = -1
-                cluster_longest_subject_end = -1
-                cluster_longest_subject_len = -1
+                    cluster_longest_subject_start = -1
+                    cluster_longest_subject_end = -1
+                    cluster_longest_subject_len = -1
 
-                cluster_extend_num = 0
+                    cluster_extend_num = 0
 
-                # print('subject pos size: %d' %(len(cur_cluster)))
-                # record visited fragments
-                visited_frag = {}
-                for i in range(len(cur_cluster)):
-                    # keep a longest query start from each fragment
-                    origin_frag = cur_cluster[i]
-                    if visited_frag.__contains__(origin_frag):
-                        continue
-                    cur_frag_len = abs(origin_frag[1] - origin_frag[0])
-                    cur_longest_query_len = cur_frag_len
-                    longest_query_start = origin_frag[0]
-                    longest_query_end = origin_frag[1]
-                    longest_subject_start = origin_frag[2]
-                    longest_subject_end = origin_frag[3]
-
-                    cur_extend_num = 0
-
-                    visited_frag[origin_frag] = 1
-                    # try to extend query
-                    for j in range(i + 1, len(cur_cluster)):
-                        ext_frag = cur_cluster[j]
-                        if visited_frag.__contains__(ext_frag):
+                    # print('subject pos size: %d' %(len(cur_cluster)))
+                    # record visited fragments
+                    visited_frag = {}
+                    for i in range(len(cur_cluster)):
+                        # keep a longest query start from each fragment
+                        origin_frag = cur_cluster[i]
+                        if visited_frag.__contains__(origin_frag):
                             continue
+                        cur_frag_len = abs(origin_frag[1] - origin_frag[0])
+                        cur_longest_query_len = cur_frag_len
+                        longest_query_start = origin_frag[0]
+                        longest_query_end = origin_frag[1]
+                        longest_subject_start = origin_frag[2]
+                        longest_subject_end = origin_frag[3]
 
-                        # could extend
-                        # extend right
-                        if ext_frag[3] > longest_subject_end:
-                            # judge query direction
-                            if longest_query_start < longest_query_end and ext_frag[0] < ext_frag[1]:
-                                # +
-                                if ext_frag[1] > longest_query_end:
-                                    # forward extend
-                                    if ext_frag[0] - longest_query_end < fixed_extend_base_threshold and ext_frag[
-                                        2] - longest_subject_end < fixed_extend_base_threshold / 3:
-                                        # update the longest path
-                                        longest_query_start = longest_query_start
-                                        longest_query_end = ext_frag[1]
-                                        longest_subject_start = longest_subject_start if longest_subject_start < \
-                                                                                         ext_frag[
-                                                                                             2] else ext_frag[2]
-                                        longest_subject_end = ext_frag[3]
-                                        cur_longest_query_len = longest_query_end - longest_query_start
-                                        cur_extend_num += 1
-                                        visited_frag[ext_frag] = 1
-                                    elif ext_frag[0] - longest_query_end >= fixed_extend_base_threshold:
-                                        break
-                            elif longest_query_start > longest_query_end and ext_frag[0] > ext_frag[1]:
-                                # reverse
-                                if ext_frag[1] < longest_query_end:
-                                    # reverse extend
-                                    if longest_query_end - ext_frag[0] < fixed_extend_base_threshold and ext_frag[
-                                        2] - longest_subject_end < fixed_extend_base_threshold / 3:
-                                        # update the longest path
-                                        longest_query_start = longest_query_start
-                                        longest_query_end = ext_frag[1]
-                                        longest_subject_start = longest_subject_start if longest_subject_start < \
-                                                                                         ext_frag[
-                                                                                             2] else ext_frag[2]
-                                        longest_subject_end = ext_frag[3]
-                                        cur_longest_query_len = longest_query_start - longest_query_end
-                                        cur_extend_num += 1
-                                        visited_frag[ext_frag] = 1
-                                    elif longest_query_end - ext_frag[0] >= fixed_extend_base_threshold:
-                                        break
-                    if cur_longest_query_len > cluster_longest_query_len:
-                        cluster_longest_query_start = longest_query_start
-                        cluster_longest_query_end = longest_query_end
-                        cluster_longest_query_len = cur_longest_query_len
+                        cur_extend_num = 0
 
-                        cluster_longest_subject_start = longest_subject_start
-                        cluster_longest_subject_end = longest_subject_end
-                        cluster_longest_subject_len = longest_subject_end - longest_subject_start
+                        visited_frag[origin_frag] = 1
+                        # try to extend query
+                        for j in range(i + 1, len(cur_cluster)):
+                            ext_frag = cur_cluster[j]
+                            if visited_frag.__contains__(ext_frag):
+                                continue
 
-                        cluster_extend_num = cur_extend_num
-                # keep this longest query
-                if cluster_longest_query_len != -1:
-                    longest_queries.append((cluster_longest_query_start, cluster_longest_query_end,
-                                            cluster_longest_query_len, cluster_longest_subject_start,
-                                            cluster_longest_subject_end, cluster_longest_subject_len, subject_name,
-                                            cluster_extend_num))
+                            # could extend
+                            # extend right
+                            if ext_frag[3] > longest_subject_end:
+                                # judge query direction
+                                if longest_query_start < longest_query_end and ext_frag[0] < ext_frag[1]:
+                                    # +
+                                    if ext_frag[1] > longest_query_end:
+                                        # forward extend
+                                        if ext_frag[0] - longest_query_end < fixed_extend_base_threshold and ext_frag[
+                                            2] - longest_subject_end < fixed_extend_base_threshold / 3:
+                                            # update the longest path
+                                            longest_query_start = longest_query_start
+                                            longest_query_end = ext_frag[1]
+                                            longest_subject_start = longest_subject_start if longest_subject_start < \
+                                                                                             ext_frag[
+                                                                                                 2] else ext_frag[2]
+                                            longest_subject_end = ext_frag[3]
+                                            cur_longest_query_len = longest_query_end - longest_query_start
+                                            cur_extend_num += 1
+                                            visited_frag[ext_frag] = 1
+                                        elif ext_frag[0] - longest_query_end >= fixed_extend_base_threshold:
+                                            break
+                                elif longest_query_start > longest_query_end and ext_frag[0] > ext_frag[1]:
+                                    # reverse
+                                    if ext_frag[1] < longest_query_end:
+                                        # reverse extend
+                                        if longest_query_end - ext_frag[0] < fixed_extend_base_threshold and ext_frag[
+                                            2] - longest_subject_end < fixed_extend_base_threshold / 3:
+                                            # update the longest path
+                                            longest_query_start = longest_query_start
+                                            longest_query_end = ext_frag[1]
+                                            longest_subject_start = longest_subject_start if longest_subject_start < \
+                                                                                             ext_frag[
+                                                                                                 2] else ext_frag[2]
+                                            longest_subject_end = ext_frag[3]
+                                            cur_longest_query_len = longest_query_start - longest_query_end
+                                            cur_extend_num += 1
+                                            visited_frag[ext_frag] = 1
+                                        elif longest_query_end - ext_frag[0] >= fixed_extend_base_threshold:
+                                            break
+                        if cur_longest_query_len > cluster_longest_query_len:
+                            cluster_longest_query_start = longest_query_start
+                            cluster_longest_query_end = longest_query_end
+                            cluster_longest_query_len = cur_longest_query_len
 
-        # we now consider, we should take some sequences from longest_queries to represent this query sequence.
-        # we take the longest sequence by length, if the latter sequence overlap with the former sequence largely (50%),
-        # continue find next sequence until the ratio of query sequence over 90% or no more sequences.
-        longest_queries.sort(key=lambda x: -x[2])
-        keep_longest_query[query_name] = longest_queries
-    # print(keep_longest_query)
-    # Save the record as a table, removing redundant records
-    # (more than 50% of the latter sequence's area is within the former).
-    with open(cur_table, 'w') as f_save:
-        for query_name in keep_longest_query.keys():
-            domain_array = keep_longest_query[query_name]
-            # for domain_info in domain_array:
-            #     f_save.write(query_name+'\t'+str(domain_info[6])+'\t'+str(domain_info[0])+'\t'+str(domain_info[1])+'\t'+str(domain_info[3])+'\t'+str(domain_info[4])+'\n')
-            merge_domains = []
-            # Merge domain_array.
-            domain_array.sort(key=lambda x: -x[2])
-            for domain_info in domain_array:
-                if len(merge_domains) == 0:
-                    merge_domains.append(domain_info)
-                else:
-                    is_new_domain = True
-                    for pre_domain in merge_domains:
-                        pre_start = pre_domain[0]
-                        pre_end = pre_domain[1]
-                        # Calculate overlap.
-                        if pre_start > pre_end:
-                            tmp = pre_start
-                            pre_start = pre_end
-                            pre_end = tmp
-                        cur_start = domain_info[0]
-                        cur_end = domain_info[1]
-                        if cur_start > cur_end:
-                            tmp = cur_start
-                            cur_start = cur_end
-                            cur_end = tmp
-                        if cur_end >= pre_start and cur_end <= pre_end:
-                            if cur_start <= pre_start:
-                                overlap = cur_end - pre_start
-                            else:
-                                overlap = cur_end - cur_start
-                        elif cur_end > pre_end:
-                            if cur_start >= pre_start and cur_start <= pre_end:
-                                overlap = pre_end - cur_start
+                            cluster_longest_subject_start = longest_subject_start
+                            cluster_longest_subject_end = longest_subject_end
+                            cluster_longest_subject_len = longest_subject_end - longest_subject_start
+
+                            cluster_extend_num = cur_extend_num
+                    # keep this longest query
+                    if cluster_longest_query_len != -1:
+                        longest_queries.append((cluster_longest_query_start, cluster_longest_query_end,
+                                                cluster_longest_query_len, cluster_longest_subject_start,
+                                                cluster_longest_subject_end, cluster_longest_subject_len, subject_name,
+                                                cluster_extend_num))
+
+            # we now consider, we should take some sequences from longest_queries to represent this query sequence.
+            # we take the longest sequence by length, if the latter sequence overlap with the former sequence largely (50%),
+            # continue find next sequence until the ratio of query sequence over 90% or no more sequences.
+            longest_queries.sort(key=lambda x: -x[2])
+            keep_longest_query[query_name] = longest_queries
+        # print(keep_longest_query)
+        # Save the record as a table, removing redundant records
+        # (more than 50% of the latter sequence's area is within the former).
+        with open(cur_table, 'w') as f_save:
+            for query_name in keep_longest_query.keys():
+                domain_array = keep_longest_query[query_name]
+                # for domain_info in domain_array:
+                #     f_save.write(query_name+'\t'+str(domain_info[6])+'\t'+str(domain_info[0])+'\t'+str(domain_info[1])+'\t'+str(domain_info[3])+'\t'+str(domain_info[4])+'\n')
+                merge_domains = []
+                # Merge domain_array.
+                domain_array.sort(key=lambda x: -x[2])
+                for domain_info in domain_array:
+                    if len(merge_domains) == 0:
+                        merge_domains.append(domain_info)
+                    else:
+                        is_new_domain = True
+                        for pre_domain in merge_domains:
+                            pre_start = pre_domain[0]
+                            pre_end = pre_domain[1]
+                            # Calculate overlap.
+                            if pre_start > pre_end:
+                                tmp = pre_start
+                                pre_start = pre_end
+                                pre_end = tmp
+                            cur_start = domain_info[0]
+                            cur_end = domain_info[1]
+                            if cur_start > cur_end:
+                                tmp = cur_start
+                                cur_start = cur_end
+                                cur_end = tmp
+                            if cur_end >= pre_start and cur_end <= pre_end:
+                                if cur_start <= pre_start:
+                                    overlap = cur_end - pre_start
+                                else:
+                                    overlap = cur_end - cur_start
+                            elif cur_end > pre_end:
+                                if cur_start >= pre_start and cur_start <= pre_end:
+                                    overlap = pre_end - cur_start
+                                else:
+                                    overlap = 0
                             else:
                                 overlap = 0
-                        else:
-                            overlap = 0
 
-                        if float(overlap / domain_info[2]) > 0.5:
-                            is_new_domain = False
-                    if is_new_domain:
-                        merge_domains.append(domain_info)
+                            if float(overlap / domain_info[2]) > 0.5:
+                                is_new_domain = False
+                        if is_new_domain:
+                            merge_domains.append(domain_info)
 
-            # # Filter out records whose TE sequence and domain sequence come from the same species
-            # # to avoid TE sequence and domain sequence coming from the same sequence.
-            # for domain_info in merge_domains:
-            #     domain_name = str(domain_info[6])
-            #     domain_name = domain_name.replace(',', '')
-            #     if TE_species_dict[query_name] != protein_species_dict[domain_name]:
-            #         f_save.write(query_name + '\t' + str(domain_name) + '\t' + str(domain_info[0]) + '\t' + str(
-            #             domain_info[1]) + '\t' + str(domain_info[3]) + '\t' + str(domain_info[4]) + '\n')
+                # # Filter out records whose TE sequence and domain sequence come from the same species
+                # # to avoid TE sequence and domain sequence coming from the same sequence.
+                # for domain_info in merge_domains:
+                #     domain_name = str(domain_info[6])
+                #     domain_name = domain_name.replace(',', '')
+                #     if TE_species_dict[query_name] != protein_species_dict[domain_name]:
+                #         f_save.write(query_name + '\t' + str(domain_name) + '\t' + str(domain_info[0]) + '\t' + str(
+                #             domain_info[1]) + '\t' + str(domain_info[3]) + '\t' + str(domain_info[4]) + '\n')
 
-            for domain_info in merge_domains:
-                domain_name = str(domain_info[6])
-                domain_name = domain_name.replace(',', '')
-                f_save.write(query_name + '\t' + str(domain_name) + '\t' + str(domain_info[0]) + '\t' + str(
-                            domain_info[1]) + '\t' + str(domain_info[3]) + '\t' + str(domain_info[4]) + '\n')
+                for domain_info in merge_domains:
+                    domain_name = str(domain_info[6])
+                    domain_name = domain_name.replace(',', '')
+                    f_save.write(query_name + '\t' + str(domain_name) + '\t' + str(domain_info[0]) + '\t' + str(
+                                domain_info[1]) + '\t' + str(domain_info[3]) + '\t' + str(domain_info[4]) + '\n')
 
-    f_save.close()
-    return cur_table
+        f_save.close()
+        return cur_table
+    except Exception as e:
+        return e
 
 def generate_TSD_info(all_repbase_path, ncbi_ref_info, work_dir, is_expanded, keep_raw, threads):
     print('Preprocess: Start get TSD information')
@@ -2904,192 +2208,3 @@ def extract_non_autonomous(repbase_path, out_path):
         type_count[label] = count + 1
     print('non-autonomous DNA type:')
     print(type_count)
-
-
-def scale_dict_array(original_dict, expand_num):
-    # 计算所有数组长度的总和
-    total_length = sum(len(v) for v in original_dict.values())
-
-    # 计算目标长度为100时的比例因子
-    scaling_factor = expand_num / total_length
-
-    # 按比例调整每个数组的长度
-    scaled_dict = {}
-    for k, v in original_dict.items():
-        new_length = int(len(v) * scaling_factor)
-        # 确保每个数组至少包含一个元素，防止丢失数据
-        new_length = max(1, new_length)
-        scaled_dict[k] = np.resize(v, new_length)
-
-    # 调整总长度到100的误差
-    current_total_length = sum(len(v) for v in scaled_dict.values())
-    while current_total_length != expand_num:
-        for k in scaled_dict:
-            if current_total_length < expand_num:
-                scaled_dict[k] = np.append(scaled_dict[k], scaled_dict[k][0])
-                current_total_length += 1
-            elif current_total_length > expand_num:
-                scaled_dict[k] = scaled_dict[k][:-1]
-                current_total_length -= 1
-            if current_total_length == expand_num:
-                break
-
-    return scaled_dict
-
-
-def expand_frame(sequences, expand_num=100, col_num = 100, hamming_distance_threshold = 10):
-    cluster_indexes = cluster_sequences(sequences, hamming_distance_threshold, min_samples_threshold=1)
-    # 等比放大每个簇
-    # print(cluster_indexes)
-    scaled_cluster_indexes = scale_dict_array(cluster_indexes, expand_num)
-    # print(scaled_cluster_indexes)
-    new_lines = []
-    for label in scaled_cluster_indexes:
-        cur_indexes = scaled_cluster_indexes[label]
-        unique_indexes = np.unique(cur_indexes)
-        if len(unique_indexes) > 1:
-            # print('Homo cluster:' + str(cur_indexes))
-            for index in cur_indexes:
-                new_lines.append(sequences[index])
-        else:
-            # print('Random cluster:' + str(cur_indexes))
-            for i, index in enumerate(cur_indexes):
-                if i == 0:
-                    cur_line = sequences[index]
-                    new_lines.append(cur_line)
-                else:
-                    # 随机产生一条序列
-                    random_seq = generate_random_sequence(col_num)
-                    new_lines.append(random_seq)
-    return new_lines
-
-
-def expand_frame_v1(sequences, both_sequences, expand_num=100, col_num = 100, hamming_distance_threshold = 10):
-    cluster_indexes = cluster_sequences(sequences, hamming_distance_threshold, min_samples_threshold=1)
-    # 等比放大每个簇
-    # print(cluster_indexes)
-    scaled_cluster_indexes = scale_dict_array(cluster_indexes, expand_num)
-    # print(scaled_cluster_indexes)
-    new_lines = []
-    for label in scaled_cluster_indexes:
-        cur_indexes = scaled_cluster_indexes[label]
-        unique_indexes = np.unique(cur_indexes)
-        if len(unique_indexes) > 1:
-            # print('Homo cluster:' + str(cur_indexes))
-            for index in cur_indexes:
-                new_lines.append(both_sequences[index])
-        else:
-            # print('Random cluster:' + str(cur_indexes))
-            for i, index in enumerate(cur_indexes):
-                if i == 0:
-                    cur_line = both_sequences[index]
-                    new_lines.append(cur_line)
-                else:
-                    # 随机产生一条序列
-                    random_seq = generate_random_sequence(col_num)
-                    new_lines.append(random_seq)
-    return new_lines
-
-def generate_expand_matrix(matrix_file, expand_matrix_file, min_raw_copy_num):
-    left_lines = []
-    right_lines = []
-    with open(matrix_file, 'r') as f_r:
-        for line in f_r:
-            line = line.replace('\n', '')
-            parts = line.split('\t')
-            left_line = parts[0]
-            right_line = parts[1]
-            left_lines.append(left_line)
-            right_lines.append(right_line)
-
-    if len(left_lines) < min_raw_copy_num:
-        return
-
-    expand_left_lines = expand_frame(left_lines, expand_num=len(left_lines))
-    expand_right_lines = expand_frame(right_lines, expand_num=len(right_lines))
-    # print(len(left_lines), len(expand_left_lines), len(right_lines), len(expand_right_lines))
-    with open(expand_matrix_file, 'w') as f_save:
-        for i, lef_line in enumerate(expand_left_lines):
-            f_save.write(lef_line + '\t' + expand_right_lines[i] + '\n')
-
-def generate_expand_matrix_v1(matrix_file, expand_matrix_file, min_raw_copy_num):
-    left_lines = []
-    both_lines = []
-    with open(matrix_file, 'r') as f_r:
-        for line in f_r:
-            line = line.replace('\n', '')
-            parts = line.split('\t')
-            left_line = parts[0]
-            right_line = parts[1]
-            left_lines.append(left_line)
-            both_lines.append((left_line, right_line))
-
-    if len(left_lines) < min_raw_copy_num:
-        return
-
-    expand_left_lines = expand_frame_v1(left_lines, both_lines, expand_num=len(left_lines))
-    with open(expand_matrix_file, 'w') as f_save:
-        for i, both_line in enumerate(expand_left_lines):
-            f_save.write(both_line[0] + '\t' + both_line[1] + '\n')
-
-def generate_expand_matrix_batch(sample_list, min_raw_copy_num):
-    for matrix_file, expand_matrix_file in sample_list:
-        generate_expand_matrix(matrix_file, expand_matrix_file, min_raw_copy_num)
-    return True
-
-def generate_expand_matrix_batch_v1(sample_list, min_raw_copy_num):
-    for matrix_file, expand_matrix_file in sample_list:
-        generate_expand_matrix_v1(matrix_file, expand_matrix_file, min_raw_copy_num)
-    return True
-
-def expand_matrix_dir(source_dir, target_dir, threads, min_raw_copy_num):
-    if not os.path.exists(target_dir):
-        os.makedirs(target_dir)
-    sample_list = []
-    file_extension = '.matrix'
-    all_matrix_files = find_files_recursively(source_dir, file_extension)
-    for matrix_file in all_matrix_files:
-        matrix_file_name = os.path.basename(matrix_file)
-        parent_directory_name = os.path.basename(os.path.dirname(matrix_file))
-        expand_matrix_dir = target_dir + '/' + parent_directory_name
-        if not os.path.exists(expand_matrix_dir):
-            os.makedirs(expand_matrix_dir)
-        expand_matrix_file = expand_matrix_dir + '/' + matrix_file_name
-        sample_list.append((matrix_file, expand_matrix_file))
-    grouped_sample_list = split_list_into_groups(sample_list, 1000)
-
-    jobs = []
-    ex = ProcessPoolExecutor(threads)
-    for sample_list in grouped_sample_list:
-        job = ex.submit(generate_expand_matrix_batch, sample_list, min_raw_copy_num)
-        jobs.append(job)
-    ex.shutdown(wait=True)
-
-    for job in as_completed(jobs):
-        is_finish = job.result()
-
-def expand_matrix_dir_v1(source_dir, target_dir, threads, min_raw_copy_num):
-    if not os.path.exists(target_dir):
-        os.makedirs(target_dir)
-    sample_list = []
-    file_extension = '.matrix'
-    all_matrix_files = find_files_recursively(source_dir, file_extension)
-    for matrix_file in all_matrix_files:
-        matrix_file_name = os.path.basename(matrix_file)
-        parent_directory_name = os.path.basename(os.path.dirname(matrix_file))
-        expand_matrix_dir = target_dir + '/' + parent_directory_name
-        if not os.path.exists(expand_matrix_dir):
-            os.makedirs(expand_matrix_dir)
-        expand_matrix_file = expand_matrix_dir + '/' + matrix_file_name
-        sample_list.append((matrix_file, expand_matrix_file))
-    grouped_sample_list = split_list_into_groups(sample_list, 1000)
-
-    jobs = []
-    ex = ProcessPoolExecutor(threads)
-    for sample_list in grouped_sample_list:
-        job = ex.submit(generate_expand_matrix_batch_v1, sample_list, min_raw_copy_num)
-        jobs.append(job)
-    ex.shutdown(wait=True)
-
-    for job in as_completed(jobs):
-        is_finish = job.result()

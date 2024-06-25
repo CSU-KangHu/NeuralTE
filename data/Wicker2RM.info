@@ -1,0 +1,209 @@
+#Wicker_Label	RepeatMasker_Label
+DNA transposon	DNA
+Putative autonomous DNA transposon	DNA
+TIR	DNA
+TIRs	DNA
+DNA	DNA
+MER7	DNA
+MER115	DNA/hAT
+MER99	DNA/hAT
+MER80	DNA/hAT
+MER119	DNA/hAT
+MER121	DNA/hAT
+HAT superfamily	DNA/hAT
+Non-autonomous DNA transposon	DNA
+Non-autonomous DNA transposon fossil	DNA
+Putative non-autonomous DNA transposon	DNA
+nonautonomous DNA transposon	DNA
+DNA transposon fossil	DNA
+Maverick	DNA/Maverick
+Helitron	RC/Helitron
+CACTA	DNA/CMC-EnSpm
+EnSpm/CACTA	DNA/CMC-EnSpm
+Transib	DNA/CMC-Transib
+Merlin	DNA/Merlin
+MER122	DNA/Merlin
+Mutator	DNA/MULE
+MuDR	DNA/MULE
+Mirage	DNA/Mirage
+PIF-Harbinger	DNA/PIF-Harbinger
+Harbinger	DNA/PIF-Harbinger
+P	DNA/P
+P-element	DNA/P
+PiggyBac	DNA/PiggyBac
+Tc1-Mariner	DNA/TcMar
+Mariner/Tc1	DNA/TcMar
+mariner/Tc1 superfamily	DNA/TcMar
+MARNA	DNA/TcMar
+hAT	DNA/hAT
+ROVER_DM	DNA/hAT
+Crypton	DNA/Crypton
+Charlie-Galluhop	DNA/hAT-Charlie
+Kolobok	DNA/Kolobok
+Inverted repeat	DNA
+Zebrafish MITE	DNA
+Polinton	DNA/Maverick
+Academ	DNA/Academ
+Dada	DNA/Dada
+piggyBac	DNA/PiggyBac
+Sola2	DNA/Sola
+Zisupton	DNA/Zisupton
+IS3EU	DNA/IS3EU
+Ginger1	DNA/Ginger1
+CryptonV	DNA/CryptonV
+CryptonA	DNA/CryptonA
+ISL2EU	DNA/ISL2EU
+Zator	DNA/Zator
+DMHMR2	DNA/DMHMR2
+DMHMR1	DNA/DMHMR1
+LINE	LINE
+LINE_DR	LINE
+Daphne	LINE/Daphne
+Proto2	LINE/Proto2
+L1	LINE/L1
+L1MD	LINE/L1
+LINE1 repeat	LINE/L1
+L1M4_5	LINE/L1
+HAL1	LINE/L1
+LINE1	LINE/L1
+L1 repeat	LINE/L1
+L2	LINE/L2
+I	LINE/I
+L1 clade	LINE/L1
+L1 clad	LINE/L1
+CR1	LINE/CR1
+R1	LINE/R1
+CR1 clad	LINE/CR1
+Rex1	LINE/Rex-Babar
+Jockey	LINE/I-Jockey
+DMU02279	LINE/I-Jockey
+RTE	LINE/RTE-RTE
+Tx1	LINE/L1-Tx1
+Nimb	LINE/I
+Hero	LINE/R2-Hero
+Neptune	LINE/Penelope
+Crack	LINE/Crack
+Loa	LINE/Loa
+RTEX	LINE/RTEX
+NeSL	LINE/NeSL
+AP endonuclease	LINE/L2
+SINE	SINE
+5S	SINE/5S
+5S_DM	SINE/5S
+SINE3/5S	SINE/5S
+7SL	SINE/7SL
+SINE1/7SL	SINE/7SL
+tRNA	SINE/tRNA
+SINE2/tRNA	SINE/tRNA
+CAM2_GG	SINE
+LTR Retrotransposon	LTR
+LTR retrotransposon	LTR
+retroelement	LTR
+LTR	LTR
+LTR67	LTR
+LTR of retrovirus-like element	LTR
+putative long terminal repeat	LTR
+Long terminal repeat	LTR
+BHIKHARI_I	LTR
+internal sequence	LTR
+MER55	LTR
+DMI	LTR
+MaLR family	LTR
+Caulimoviridae	LTR/Caulimovirus
+Bel-Pao	LTR/Pao
+Gypsy	LTR/Gypsy
+GYPSY superfamily	LTR/Gypsy
+Retrovirus	LTR/ERV
+ERV1	LTR/ERV
+ERV2	LTR/ERV
+ERV3	LTR/ERV
+ERV2-I_DR	LTR/ERV
+HSRVS713L	LTR/ERV
+HERV-L-like endogenous retrovirus	LTR/ERV
+Internal sequence of endogenous retrovirus HERV	LTR/ERV
+Long terminal repeat of endogenous retrovirus	LTR/ERV
+Long terminal repeat of retrovirus-like element	LTR/ERV
+Partial internal sequence of endogenous retrovirus HERV3	LTR/ERV
+Putative long terminal repeat of retrovirus-like element	LTR/ERV
+Internal sequence of retroviral-like element	LTR/ERV
+Internal sequence of retrovirus-like element	LTR/ERV
+Internal part of endogenous retrovirus HERV-L	LTR/ERV
+internal portion	LTR/ERV
+LTR71A	LTR/ERV
+Endogenous retrovirus S71	LTR/ERV
+Noncoding foamy-virus-like endogenous retrovirus	LTR/ERV
+Partial internal sequence of endogenous retrovirus HSRIRT	LTR/ERV
+Endogenous retrovirus HERVK(C4)	LTR/ERV
+Endogenous Retrovirus	LTR/ERV
+endogenous retrovirus	LTR/ERV
+HERVFH retrovirus	LTR/ERV
+MER4-group	LTR/ERV
+MER4I-group	LTR/ERV
+MER4 group	LTR/ERV
+MER4-group family	LTR/ERV
+MER67A	LTR/ERV
+MER67B	LTR/ERV
+MER67C	LTR/ERV
+MER114	LTR/ERV
+gag	LTR
+ENS1	LTR/ERV
+Internal sequence of mouse VL30 retro-element	LTR/ERV
+Copia	LTR/Copia
+Penelope	LINE/Penelope
+DIRS	LTR/DIRS
+Ngaro	LTR/Ngaro
+VIPER	LTR/Viper
+BEL	LTR/Pao
+R2	LINE/R2
+Unknown	Unknown
+Transposable Element	Unknown
+Non-LTR Retrotransposon	Unknown
+Non-LTR retrotransposon	Unknown
+Nonautonomous	Unknown
+Satellite	Unknown
+SAT	Unknown
+snRNA	Unknown
+(CA)n related	Unknown
+EGF-like repeat	Unknown
+Y chromosome	Unknown
+Multicopy gene	Unknown
+Repeat region	Unknown
+Repetitive DNA	Unknown
+Repetitive sequence	Unknown
+Pseudogene	Unknown
+MSAT	Unknown
+retrotransposon	Unknown
+PEN1	Unknown
+PEN2	Unknown
+PEN4	Unknown
+DMHETRP	Unknown
+ALAD	Unknown
+ARS406	Unknown
+DMFUSHI	Unknown
+DMFTZ	Unknown
+transposon	Unknown
+Dispersed middle repetitive element	Unknown
+Dispersed middle repetitive DNA sequence	Unknown
+Repetitive element	Unknown
+reverse transcriptase	Unknown
+KER	Unknown
+HSFAU	Unknown
+MER22	Unknown
+MER35	Unknown
+MER79	Unknown
+MER111	Unknown
+MER118	Unknown
+MER98	Unknown
+MER120	Unknown
+satellite	Unknown
+5' end of primate L1 repeat	Unknown
+Satellite repetitive element	Unknown
+7SK	Unknown
+Inerspersed repeat	Unknown
+Interspersed repeat	Unknown
+Repeat sequence	Unknown
+TEST	Unknown
+Ro RNA	Unknown
+U6 small nuclear RNA	Unknown
+Tandemly repetitive sequence	Unknown
+Interspersed repetitive sequence	Unknown

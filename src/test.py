@@ -1,7 +1,4 @@
 #-- coding: UTF-8 --
-import base64
-import heapq
-import json
 import os
 import random
 import re
@@ -16,9 +13,8 @@ from matplotlib import pyplot as plt
 import seaborn as sns
 from sklearn import datasets
 from sklearn.manifold import TSNE
-from concurrent.futures import ProcessPoolExecutor, as_completed
 
-
+from src.DataProcessor import DataProcessor
 
 current_folder = os.path.dirname(os.path.abspath(__file__))
 # 添加 configs 文件夹的路径到 Python 路径
@@ -28,19 +24,10 @@ sys.path.append(configs_folder)
 from configs import config
 from utils.data_util import read_fasta, store_fasta, read_fasta_v1, replace_non_atcg, get_flanking_copies, \
     get_copies_TSD_info, search_TSD_regular, extract_non_autonomous, run_command, \
-    transfer_RMOut2Bed, generate_random_sequences, generate_random_sequence, word_seq, generate_kmer_list, \
-    cluster_sequences, generate_random_sequence_v1, generate_expand_matrix, find_files_recursively, \
-    split_list_into_groups, expand_matrix_dir, get_matrix_feature_v3, generate_kmer_dic, expand_matrix_dir_v1, \
-    get_domain_info
+    transfer_RMOut2Bed, generate_random_sequences, generate_random_sequence
 from utils.evaluate_util import generate_TERL_dataset, generate_ClassifyTE_dataset, evaluate_RepeatClassifier, \
     evaluate_TERL, evaluate_DeepTE, transform_DeepTE_to_fasta, add_ClassifyTE_classification, evaluate_ClassifyTE, \
     evaluate_TEsorter, merge_overlapping_intervals, get_metrics_by_label, plot_3D_param, analyze_class_ratio_gff
-from Util import judge_both_ends_frame_v1, filter_ltr_by_homo, multi_process_align_v2, get_full_length_copies_RM, \
-    read_scn, get_recombination_ltr, merge_terminals, deredundant_for_LTR, cons_from_mafft, generate_full_length_out, \
-    is_TIR_frame, get_both_ends_frame, generate_both_ends_frame_from_seq, rename_reference, get_overlap_len, \
-    merge_overlap_seq, judge_left_frame_LTR, get_LTR_seq_from_scn, search_ltr_structure, get_low_copy_LTR, \
-    get_high_copy_LTR
-from clean_LTR_internal import purge_internal_seq, purge_internal_seq_by_table
 
 
 def connect_LTR(repbase_path):
@@ -344,704 +331,7 @@ def get_insert_time_dist_boxplot(output_path, output_fig, type, color):
     plt.savefig(output_fig, format='png')
     plt.clf()
 
-
-def connect_segments(segs):
-    connected_segs = []
-    visited_index = set()
-    for i in range(len(segs)):
-        if i in visited_index:
-            continue
-        cur_seg = segs[i]
-        visited_index.add(i)
-        for j in range(i+1, len(segs)):
-            if j in visited_index:
-                continue
-            next_seg = segs[j]
-            overlap_len = get_overlap_len(cur_seg, next_seg)
-            if overlap_len > 0:
-                merge_seg = merge_overlap_seq(cur_seg, next_seg)
-                cur_seg = merge_seg
-                visited_index.add(j)
-            else:
-                break
-        connected_segs.append(cur_seg)
-    return connected_segs
-
-
-def get_mask_regions(std_out):
-    chr_masks = {}
-    te_masks = {}
-    with open(std_out, 'r') as f_r:
-        for line in f_r:
-            line = line.replace('\n', '')
-            parts = line.split('\t')
-            chr_name = parts[0]
-            chr_start = int(parts[1])
-            chr_end = int(parts[2])
-            te_name = parts[3].split(';')[9]
-            if chr_name not in chr_masks:
-                chr_masks[chr_name] = []
-            segs = chr_masks[chr_name]
-            segs.append((chr_start, chr_end, te_name))
-
-            if te_name not in te_masks:
-                te_masks[te_name] = {}
-            chr_dict = te_masks[te_name]
-            if chr_name not in chr_dict:
-                chr_dict[chr_name] = []
-            chr_segs = chr_dict[chr_name]
-            chr_segs.append((chr_start, chr_end))
-    return chr_masks, te_masks
-
-def BM_EDTA():
-    # 自己编写程序，尝试获得和BM_EDTA一致的结果
-    work_dir = '/home/hukang/LTR_Benchmarking/LTR_libraries/Ours/zebrafish'
-    genome = work_dir + '/genome.rename.fa'
-    std_out = work_dir + '/repbase.edta.out'
-    test_out = work_dir + '/HiTE.edta.out'
-    # Convert .out file to .bed file
-    convert2bed_command = 'perl ' + config.project_dir + '/tools/RMout_to_bed.pl ' + std_out + ' base1'
-    os.system(convert2bed_command)
-    convert2bed_command = 'perl ' + config.project_dir + '/tools/RMout_to_bed.pl ' + test_out + ' base1'
-    os.system(convert2bed_command)
-    std_out += '.bed'
-    test_out += '.bed'
-    std_chr_masks, std_te_masks = get_mask_regions(std_out)
-    test_chr_masks, test_te_masks = get_mask_regions(test_out)
-    # print(std_chr_masks)
-    # print(std_te_masks)
-    # print(test_chr_masks)
-    # print(test_te_masks)
-
-    # 计算TP,FP,FN,TN等指标
-    # 我们获取基因组的base，然后分别把比对mask上去，那我们就可以知道哪些碱基是TP和FP了。
-    # 由于我们有碱基与 te_name 的对应关系，我们可以获得每个 te 对应的TP,FP数量
-    ref_names, ref_contigs = read_fasta(genome)
-    base_masked = {}
-    for name in ref_names:
-        ref_seq = ref_contigs[name]
-        ref_arr = [0] * len(ref_seq)
-        base_masked[name] = ref_arr
-    # 将金标准覆盖碱基，将覆盖区域置为1
-    # 将测试覆盖碱基，将有>=1的区域置为2，否则置为-1
-    # 目前有 0， 1， 2，-1 四种组成，TP: 2; TN: 0; FP: -1; FN: 1
-    for chr_name in std_chr_masks.keys():
-        ref_arr = base_masked[chr_name]
-        for seg in std_chr_masks[chr_name]:
-            chr_start = seg[0]
-            chr_end = seg[1]
-            for i in range(chr_start - 1, chr_end):
-                ref_arr[i] = 1
-    for chr_name in test_chr_masks.keys():
-        ref_arr = base_masked[chr_name]
-        for seg in test_chr_masks[chr_name]:
-            chr_start = seg[0]
-            chr_end = seg[1]
-            for i in range(chr_start - 1, chr_end):
-                if ref_arr[i] >= 1:
-                    ref_arr[i] = 2
-                else:
-                    ref_arr[i] = -1
-    TP = 0
-    TN = 0
-    FP = 0
-    FN = 0
-    for chr_name in base_masked.keys():
-        ref_arr = base_masked[chr_name]
-        for i in range(len(ref_arr)):
-            if ref_arr[i] == 2:
-                TP += 1
-            elif ref_arr[i] == 0:
-                TN += 1
-            elif ref_arr[i] == -1:
-                FP += 1
-            elif ref_arr[i] == 1:
-                FN += 1
-    print('TP:' + str(TP))
-    print('FN:' + str(FN))
-    print('TN:' + str(TN))
-    print('FP:' + str(FP))
-
-    sens = float(TP) / (TP + FN)
-    spec = float(TN) / (FP + TN)
-    accu = float(TP + TN) / (TP + TN + FP + FN)
-    prec = float(TP) / (TP + FP)
-    FDR = float(FP) / (TP + FP)
-    F1 = float(2 * TP) / (2 * TP + FP + FN)
-    print('Sensitivity: ' + str(sens))
-    print('Specificity: ' + str(spec))
-    print('Accuracy: ' + str(accu))
-    print('Precision: ' + str(prec))
-    print('FDR: ' + str(FDR))
-    print('F1 measure: ' + str(F1))
-
-    # 计算每个TE 对应的 TP, FP, FN
-    te_ind = {}
-    for te_name in test_te_masks.keys():
-        TP = 0
-        FP = 0
-        FN = 0
-        chr_dict = test_te_masks[te_name]
-        for chr_name in chr_dict.keys():
-            ref_arr = base_masked[chr_name]
-            for seg in chr_dict[chr_name]:
-                chr_start = seg[0]
-                chr_end = seg[1]
-                for i in range(chr_start - 1, chr_end):
-                    if ref_arr[i] == 2:
-                        TP += 1
-                    elif ref_arr[i] == -1:
-                        FP += 1
-                    elif ref_arr[i] == 1:
-                        FN += 1
-        te_ind[te_name] = (TP, FP, FN)
-    sorted_te_ind = sorted(te_ind.items(), key=lambda item: item[1][1], reverse=True)
-
-    # 序列化字典并保存到文件
-    te_ind_json = work_dir + '/te_ind.json'
-    with open(te_ind_json, 'w', encoding='utf-8') as f:
-        json.dump(sorted_te_ind, f, ensure_ascii=False, indent=4)
-
-    # with open(te_ind_json, 'r', encoding='utf-8') as f:
-    #     sorted_te_ind = json.load(f)
-    # print(sorted_te_ind)
-
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives import padding
-from cryptography.hazmat.backends import default_backend
-import os
-
-# 固定密钥和初始化向量
-KEY = b'This is a key123'  # 必须是16, 24, 或 32 字节长 (128, 192, or 256 bits)
-IV = b'This is an IV456'  # 必须是16字节长 (128 bits)
-
-
-# 编码（加密）
-def encode(plaintext, key, iv):
-    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
-    encryptor = cipher.encryptor()
-
-    padder = padding.PKCS7(algorithms.AES.block_size).padder()
-    padded_data = padder.update(plaintext.encode()) + padder.finalize()
-
-    ciphertext = encryptor.update(padded_data) + encryptor.finalize()
-    return base64.b64encode(ciphertext).decode('utf-8')
-
-
-# 解码（解密）
-def decode(ciphertext, key, iv):
-    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
-    decryptor = cipher.decryptor()
-
-    padded_plaintext = decryptor.update(base64.b64decode(ciphertext)) + decryptor.finalize()
-
-    unpadder = padding.PKCS7(algorithms.AES.block_size).unpadder()
-    plaintext = unpadder.update(padded_plaintext) + unpadder.finalize()
-    return plaintext.decode()
-
-
-
-
-
 if __name__ == '__main__':
-    # 对真实数据集进行拷贝数扩展
-    # threads = 40
-    # source_dir = '/home/hukang/left_LTR_real_dataset/raw_data/both_ends_frames/positive'
-    # target_dir = '/home/hukang/left_LTR_real_dataset/raw_data/both_ends_frames_sort/positive'
-    # min_raw_copy_num = 0
-    # expand_matrix_dir_v1(source_dir, target_dir, threads, min_raw_copy_num)
-
-    # source_dir = '/home/hukang/left_LTR_real_dataset/raw_data/both_ends_frames_other_species/negative'
-    # target_dir = '/home/hukang/left_LTR_real_dataset/raw_data/both_ends_frames_other_species/negative_sort'
-    # min_raw_copy_num = 0
-    # expand_matrix_dir_v1(source_dir, target_dir, threads, min_raw_copy_num)
-
-    # source_dir = '/home/hukang/left_LTR_real_dataset/raw_data/both_ends_frames_other_species/non_ltr_tir_negative'
-    # target_dir = '/home/hukang/left_LTR_real_dataset/raw_data/both_ends_frames_other_species/non_ltr_tir_negative_sort'
-    # min_raw_copy_num = 0
-    # expand_matrix_dir_v1(source_dir, target_dir, threads, min_raw_copy_num)
-
-    # source_dir = '/home/hukang/LTR_Benchmarking/LTR_libraries/NeuralLTR/rice_MSUv7/LTR_finder/ltr_left_frames'
-    # target_dir = '/home/hukang/LTR_Benchmarking/LTR_libraries/NeuralLTR/rice_MSUv7/LTR_finder/ltr_left_frames_expand'
-    # min_raw_copy_num = 0
-    # expand_matrix_dir(source_dir, target_dir, threads, min_raw_copy_num)
-
-    # # 过滤掉数据集中拷贝数 <= 5 的数据
-    # threshold = 5
-    # source_dir = '/home/hukang/left_LTR_real_dataset/raw_data/both_ends_frames_other_species'
-    # target_dir = '/home/hukang/left_LTR_real_dataset/raw_data/both_ends_frames_other_species_bak'
-    # file_extension = '.matrix'
-    # all_positive_matrix_files = find_files_recursively(source_dir, file_extension)
-    # for matrix_file in all_positive_matrix_files:
-    #     row_num = 0
-    #     with open(matrix_file, 'r') as f_r:
-    #         for line in f_r:
-    #             row_num += 1
-    #     if row_num > threshold:
-    #         new_matrix_file = matrix_file.replace('both_ends_frames_other_species', 'both_ends_frames_other_species_bak')
-    #         target_dir = os.path.dirname(new_matrix_file)
-    #         if not os.path.exists(target_dir):
-    #             os.makedirs(target_dir)
-    #         os.system('cp ' + matrix_file + ' ' + new_matrix_file)
-
-    # tmp_output_dir = '/home/hukang/NeuralLTR/demo/test1'
-    # internal_seq_filter = tmp_output_dir + '/confident_ltr.internal.fa.filter_tandem'
-    # project_dir = config.project_dir
-    # lib_dir = project_dir + '/databases'
-    # line_db = lib_dir + '/Tpases020812LINE'
-    # threads = 40
-    #
-    # clean_internal_seq = internal_seq_filter + '.clean'
-    # output_table = internal_seq_filter + '.domain'
-    # temp_dir = tmp_output_dir + '/domain'
-    # # get_domain_info(internal_seq_filter, line_db, output_table, threads, temp_dir)
-    # purge_internal_seq_by_table(internal_seq_filter, line_db, clean_internal_seq, output_table)
-
-    # BM_EDTA()
-
-    # sequence = 'CAGTGGCACATTAGGTAGTGCTATCGCCTCACAGCAAAAAGGTCGCTGGTTAGAGCCTCGGCTGGATCAGTTGGCGTTTCTGTGTGAAGTTTGCATGTTCTTCCTGCGTTCGTGTGATTCTCCTCCGGGTGCTTCGGTTTCCCCCACAGTCCAAAGACATGCGGTACAGGTGAATTGAGTAGGCTAAATTGTCTGTAGTGTATGAGTGTATGTGTGAATGAGCTTGTGTGGATGTTTCCCAGAGATGGGTTGCGGCGGAAAGGGCATAAGCTGCATAAAAAAAAACGTGCTGGATAAGTTGGTGGTTTATTTCACTGTGGCGACACCGGATTAAAAAAGGGACTAAGCTGAAAATAAAATGAATGAATGAATGAA'
-    # has_sine_tail = identify_SINE_tail(sequence)
-    # print(has_sine_tail)
-
-    # # 遍历所有的正样本LTR序列，看看有多少 LTR 满足sine tail
-    # repbase_path = '/home/hukang/NeuralTE_dataset/raw_Repbase/all_repbase.ref'
-    # repbase_names, repbase_contigs = read_fasta(repbase_path)
-    # ltr_num = 0
-    # sine_num = 0
-    # for name in repbase_names:
-    #     if '-LTR' in name or '_LTR' in name:
-    #         ltr_num += 1
-    #         seq = repbase_contigs[name]
-    #         has_sine_tail = identify_SINE_tail(seq)
-    #         if has_sine_tail and not seq.startswith('TG') and not seq.endswith('CA'):
-    #             sine_num += 1
-    #             print(name)
-    # print(ltr_num, sine_num)
-
-    # repbase_names, repbase_contigs = read_fasta_v1(repbase_path)
-    # sine_num = 0
-    # sine_tail_num = 0
-    # for name in repbase_names:
-    #     parts = name.split('\t')
-    #     if len(parts) != 3:
-    #         continue
-    #     raw_name = parts[0]
-    #     label = parts[1]
-    #     if 'SINE' in label:
-    #         sine_num += 1
-    #         seq = repbase_contigs[name]
-    #         has_sine_tail = identify_SINE_tail(seq)
-    #         if has_sine_tail:
-    #             sine_tail_num += 1
-    #         else:
-    #             print(name)
-    # print(sine_num, sine_tail_num)
-
-
-    # line = '44156089 44175327 19239 44156089 44156442 354 44174966 44175327 362 85.0 NA chr_16'
-    # # line = '12521271 12537542 16272 12521281 12521656 376 12537167 12537533 367 86.0 NA chr_8'
-    # genome = '/home/hukang/LTR_Benchmarking/LTR_libraries/LTR_detector/zebrafish/GCF_000002035.6_GRCz11_genomic.rename.fna'
-    # ref_names, ref_contigs = read_fasta(genome)
-    # left_size = 20
-    # internal_size = 3
-    #
-    # parts = line.split(' ')
-    # chr_name = parts[11]
-    # ref_seq = ref_contigs[chr_name]
-    #
-    # LTR_start = int(parts[0])
-    # LTR_end = int(parts[1])
-    # lLTR_start = int(parts[3])
-    # lLTR_end = int(parts[4])
-    # left_LTR_seq = ref_seq[lLTR_start: lLTR_end]
-    # # print(left_LTR_seq)
-    # # print(len(left_LTR_seq))
-    #
-    # # 取左/右侧 8bp + 3bp
-    # # 计算左LTR的切片索引，并确保它们在范围内
-    # left_start = max(LTR_start - 1 - left_size, 0)
-    # left_end = min(LTR_start + internal_size, len(ref_seq))
-    # left_seq = ref_seq[left_start: left_end]
-    #
-    # # 计算右LTR的切片索引，并确保它们在范围内
-    # right_start = max(LTR_end - 1 - internal_size, 0)
-    # right_end = min(LTR_end + left_size, len(ref_seq))
-    # right_seq = ref_seq[right_start: right_end]
-    #
-    # ltr_name = 'chr_2_13128730-13141096'
-    # ltr_name, has_structure = search_ltr_structure(ltr_name, left_seq, right_seq, left_LTR_seq)
-    # print(ltr_name, has_structure)
-
-
-    # tmp_output_dir = '/home/hukang/NeuralLTR/demo/test4'
-    # reference = '/home/hukang/NeuralLTR/demo/GCF_000001215.4_Release_6_plus_ISO1_MT_genomic.rename.fna'
-    # confident_ltr_terminal = tmp_output_dir + '/confident_ltr.terminal.fa'
-    # confident_ltr_internal = tmp_output_dir + '/confident_ltr.internal.fa'
-    # scn_file = tmp_output_dir + '/confident_ltr.scn'
-    # get_LTR_seq_from_scn(reference, scn_file, confident_ltr_terminal, confident_ltr_internal)
-
-    work_dir = '/home/hukang/LTR_Benchmarking/LTR_libraries/Ours/zebrafish'
-    matrix_file = work_dir + '/high_copy_frames/chr_22:40137057-40138267.matrix'
-    is_ltr, new_boundary_start = judge_left_frame_LTR(matrix_file)
-    print(is_ltr, new_boundary_start)
-
-    # # 提取Repbase中的Helitron元素，并生成加密library
-    # work_dir = '/home/hukang/NeuralTE_dataset/raw_Repbase'
-    # repbase_path = work_dir + '/all_repbase.ref'
-    # helitron_lib = work_dir + '/all_helitron.ref'
-    # repbase_names, repbase_contigs = read_fasta_v1(repbase_path)
-    # helitron_contigs = {}
-    # for name in repbase_names:
-    #     parts = name.split('\t')
-    #     if len(parts) != 3:
-    #         continue
-    #     label = parts[1]
-    #     if label == 'Helitron':
-    #         seq = repbase_contigs[name]
-    #         # encoded_name = encode(name, KEY, IV)
-    #         # encoded_text = encode(seq, KEY, IV)
-    #         # helitron_contigs[encoded_name] = encoded_text
-    #         helitron_contigs[name] = seq
-    # store_fasta(helitron_contigs, helitron_lib)
-
-
-    # original_text = "This is a secret message."
-    #
-    # # 编码
-    # encoded_text = encode(original_text, KEY, IV)
-    # print(f"Encoded text: {encoded_text}")
-    #
-    # # 解码
-    # decoded_text = decode(encoded_text, KEY, IV)
-    # print(f"Decoded text: {decoded_text}")
-
-
-    # work_dir = '/home/hukang/NeuralLTR/demo/test3'
-    # high_copy_output_dir = work_dir + '/high_copy_frames'
-    # expand_high_copy_output_dir = high_copy_output_dir + '_expand'
-    # threads = 4
-    # min_raw_copy_num = 0
-    # expand_matrix_dir_v1(high_copy_output_dir, expand_high_copy_output_dir, threads, min_raw_copy_num)
-
-
-    # work_dir = '/home/hukang/NeuralLTR/demo/test1'
-    # query_path = work_dir + '/confident_ltr.internal.fa'
-    # blast_other = work_dir + '/test.out'
-    # purge_internal_seq(query_path, blast_other)
-
-    # genome = '/home/hukang/NeuralLTR/demo/GCF_000001215.4_Release_6_plus_ISO1_MT_genomic.rename.fna'
-    # ref_names, ref_contigs = read_fasta(genome)
-    # seq_name = 'Chr450_26134790-26154779-int'
-    # seq = ref_contigs['Chr450'][26135247: 26154322]
-    # print(seq)
-    # # Chr450_26134790-26154779-int
-
-
-    # # 将玉米的参考基因组变成Chr+number格式
-    # tmp_output_dir = '/home/hukang/LTR_Benchmarking/LTR_libraries/LTR_finder/Zea_mays'
-    # reference = tmp_output_dir + '/GCF_902167145.1_Zm-B73-REFERENCE-NAM-5.0_genomic.fna.filtered'
-    # # rename reference
-    # ref_rename_path = tmp_output_dir + '/genome.rename.fa'
-    # chr_name_map = tmp_output_dir + '/chr_name.map'
-    # # rename_reference(reference, ref_rename_path, chr_name_map)
-    # chr_names_dicts = {}
-    # with open(chr_name_map, 'r') as f_r:
-    #     for line in f_r:
-    #         line = line.replace('\n', '')
-    #         parts = line.split('\t')
-    #         chr_names_dicts[parts[1]] = parts[0]
-    # reference = ref_rename_path
-    # scn_file = tmp_output_dir + '/GCF_902167145.1_Zm-B73-REFERENCE-NAM-5.0_genomic.fna.filtered.finder.combine.scn'
-    # rename_scn_file = tmp_output_dir + '/LTR_finder.rename.scn'
-    # lines = []
-    # with open(scn_file, 'r') as f_r:
-    #     for line in f_r:
-    #         line = line.replace('\n', '')
-    #         if line.startswith('#'):
-    #             lines.append(line)
-    #         else:
-    #             parts = line.split(' ')
-    #             parts[-1] = chr_names_dicts[parts[-1]]
-    #             newline = ' '.join(parts)
-    #             lines.append(newline)
-    #
-    # with open(rename_scn_file, 'w') as f_save:
-    #     for line in lines:
-    #         f_save.write(line + '\n')
-
-    # confident_ltr_terminal = '/home/hukang/LTR_Benchmarking/LTR_libraries/NeuralLTR/Zea_mays/LTR_finder/confident_ltr.terminal.fa'
-    # confident_ltr_internal_cons = '/home/hukang/LTR_Benchmarking/LTR_libraries/NeuralLTR/Zea_mays/LTR_finder/confident_ltr.terminal.fa.cdhit.cons.onlyshort'
-    # # tmp_output_dir = '/home/hukang/LTR_Benchmarking/LTR_libraries/NeuralLTR/Zea_mays/LTR_finder'
-    # # threads = 40
-    # # deredundant_for_LTR(confident_ltr_terminal, tmp_output_dir, threads)
-    #
-    # cd_hit_command = 'cd-hit-est -aS ' + str(0.95) + ' -c ' + str(0.8) \
-    #                  + ' -G 0 -g 1 -A 80 -i ' + confident_ltr_terminal + ' -o ' + confident_ltr_internal_cons + ' -T 0 -M 0'
-    # os.system(cd_hit_command + ' > /dev/null 2>&1')
-
-    # cur_align_file = '/home/hukang/NeuralLTR/demo/test1/raw_ltr_cluster/Ninja_19/0.fa.maf.fa'
-    # cons_seq = cons_from_mafft(cur_align_file)
-    # print(cons_seq)
-    # print(len(cons_seq))
-
-    # # 输入k-mer特征的分布特点
-    # matrix_file = '/home/hukang/left_LTR_real_dataset/clean_data/both_ends_frames_clean/negative/Oryza_sativa/Chr8_seg_7_12763883-12775122-lLTR.matrix'
-    # # matrix_file = '/home/hukang/left_LTR_real_dataset/clean_data/both_ends_frames_clean/positive/Oryza_sativa/Gypsy-197_OS-LTR.matrix'
-    # # matrix_file = '/home/hukang/NeuralLTR/demo/test1/high_copy_frames/Chr449:1527981-1529068.matrix'
-    # sample_list = [(matrix_file, 0)]
-    #
-    # kmer_sizes = config.kmer_sizes
-    # for kmer_size in kmer_sizes:
-    #     config.kmer_sizes = [kmer_size]
-    #     (feature_num_list1, feature_num_list2, label, row_num, matrix_file) = get_matrix_feature_v3(sample_list)[0]
-    #
-    #     feature_num_list1 = feature_num_list1[:-1]
-    #     feature_num_list2 = feature_num_list2[:-1]
-    #
-    #     # 提取k-mer和对应的频次
-    #     k_mers1 = list(range(len(feature_num_list1)))
-    #     # k_mers1 = list(generate_kmer_dic(kmer_size).keys())
-    #     frequencies1 = list(feature_num_list1)
-    #     combined_dict1 = dict(zip(k_mers1, frequencies1))
-    #     combined_dict1 = {k: v for k, v in combined_dict1.items() if v != 0}
-    #     print(combined_dict1)
-    #     top_ten_items = heapq.nlargest(50, combined_dict1.items(), key=lambda item: item[1])
-    #     print(top_ten_items)
-    #
-    #     # 提取k-mer和对应的频次
-    #     k_mers2 = list(range(len(feature_num_list2)))
-    #     # k_mers2 = list(generate_kmer_dic(kmer_size).keys())
-    #     frequencies2 = list(feature_num_list2)
-    #     combined_dict2 = dict(zip(k_mers2, frequencies2))
-    #     combined_dict2 = {k: v for k, v in combined_dict2.items() if v != 0}
-    #     print(combined_dict2)
-    #     top_ten_items = heapq.nlargest(50, combined_dict2.items(), key=lambda item: item[1])
-    #     print(top_ten_items)
-    #
-    #     fig, axs = plt.subplots(2, 1, figsize=(8, 10))  # 2行1列的子图布局
-    #
-    #     # 在第一个子图上绘制k_mer_freq1的散点图
-    #     axs[0].scatter(k_mers1, frequencies1, alpha=0.7, color='blue')
-    #     axs[0].set_title('k-mer Frequencies - Dataset 1')
-    #     axs[0].set_xlabel('k-mers')
-    #     axs[0].set_ylabel('Frequencies')
-    #
-    #     # 在第二个子图上绘制k_mer_freq2的散点图
-    #     axs[1].scatter(k_mers2, frequencies2, alpha=0.7, color='green')
-    #     axs[1].set_title('k-mer Frequencies - Dataset 2')
-    #     axs[1].set_xlabel('k-mers')
-    #     axs[1].set_ylabel('Frequencies')
-    #
-    #     # 调整子图间距
-    #     plt.tight_layout()
-    #
-    #     # 显示图形
-    #     plt.show()
-
-
-
-
-    # tmp_output_dir = '/home/hukang/NeuralLTR/demo/test1'
-    # # Unpack nested TEs within TEs
-    # input1_path = tmp_output_dir + '/confident_ltr.tmp.fa'
-    # input2_path = tmp_output_dir + '/confident_ltr.internal.fa'
-    # clean_LTR_path = input2_path + '.clean_nested'
-    # threads = 40
-    # remove_nested_command = 'python3 /home/hukang/NeuralLTR/src/remove_nested_lib.py ' \
-    #                         + ' -t ' + str(threads) \
-    #                         + ' --tmp_output_dir ' + tmp_output_dir + ' --max_iter_num ' + str(1) \
-    #                         + ' --input1 ' + input1_path \
-    #                         + ' --input2 ' + input2_path \
-    #                         + ' --output ' + clean_LTR_path
-    # os.system(remove_nested_command)
-
-    # work_dir = '/home/hukang/LTR_Benchmarking/LTR_libraries/NeuralLTR/rice_MSUv7/LTR_finder'
-    # in_file = work_dir + '/rm2_test_redundant/file_work_with1.txt'
-    # std_lib = '/home/hukang/NeuralLTR/library/rice.ltr.ref'
-    # test_lib = work_dir + '/confident_ltr.redundant.fa'
-    # command = 'python /home/hukang/NeuralLTR/tools/connect_BM_RM2.py --in_file '+in_file+' --std_lib '+std_lib+' --test_lib ' + test_lib
-    # os.system(command)
-
-    # set1 = {'Gypsy-8B_OS-I#LTR/Gypsy', 'Copia-14B_OS-I#LTR/Copia', 'Gypsy-231_OS-LTR#LTR/Gypsy', 'Gypsy-116_OS-LTR#LTR/Gypsy', 'SZ-10_LTR#LTR/Gypsy', 'CPSC4A_I#LTR/Copia', 'Gypsy-84_OS-I#LTR/Gypsy', 'Gypsy-249_OS-LTR#LTR/Gypsy', 'Gypsy-138_OS-LTR#LTR/Gypsy', 'Copia-108_OS-LTR#LTR/Copia', 'LTR-18F_OS-LTR#LTR/Gypsy', 'Gypsy-130C_OS-LTR#LTR/Gypsy', 'Copia-104_OS-I#LTR/Copia', 'Gypsy-115_OS-LTR#LTR/Gypsy', 'RETRO2_LTR#LTR/Gypsy', 'Copia-96_OS-I#LTR/Copia', 'RETRO2B-I#LTR/Gypsy', 'RETROSAT-3B_LTR#LTR/Gypsy', 'Copia-72_OS-I#LTR/Copia', 'Gypsy-101_OS-LTR#LTR/Gypsy', 'Copia-75_OS-I#LTR/Copia', 'Copia-136_OS-I#LTR/Copia', 'RETRO3D_LTR#LTR/Gypsy', 'RETROSAT4_LTR#LTR/Gypsy', 'COPIA2-I_OS#LTR/Copia', 'OSCOPIA2_I#LTR/Copia', 'Gypsy-46_OS-LTR#LTR/Gypsy', 'Copia-47_OS-I#LTR/Copia', 'COPIA3-LTR_OS#LTR/Copia', 'RETRO3_LTR#LTR/Gypsy', 'Copia-39_OS-LTR#LTR/Copia', 'Copia-118_OS-LTR#LTR/Copia', 'Gypsy-86_OS-LTR#LTR/Gypsy', 'Copia-120_OS-I#LTR/Copia', 'Gypsy-72_OS-LTR#LTR/Gypsy', 'Gypsy-106_OS-I#LTR/Gypsy', 'Gypsy-228_OS-I#LTR/Gypsy', 'SZLTR#LTR/Gypsy', 'RETROFIT4_I#LTR/Copia', 'Copia-26_OS-LTR#LTR/Copia', 'SZ-54C_LTR#LTR/Gypsy', 'Copia-108_OS-I#LTR/Copia', 'Gypsy-25C_OS-LTR#LTR/Gypsy', 'SZ-64_LTR#LTR/Gypsy', 'Copia-18_OS-I#LTR/Copia', 'Copia-110_OS-LTR#LTR/Copia', 'Gypsy-217_OS-I#LTR/Gypsy', 'Gypsy-160_OS-LTR#LTR/Gypsy', 'SZ-22_I#LTR/Gypsy', 'Gypsy-61_OS-I#LTR/Gypsy', 'SZ-8_I#LTR/Gypsy', 'SZ-4_I#LTR/Gypsy', 'SZ-26_LTR#LTR/Gypsy', 'SC-4_I#LTR/Copia', 'Gypsy-249_OS-I#LTR/Gypsy', 'Gypsy-76_OS-I#LTR/Gypsy', 'SZ-57_LTR#LTR', 'Gypsy-46_OS-I#LTR/Gypsy', 'OSCOPIA1_LTR#LTR/Copia', 'SZ-7B-I#LTR/Gypsy', 'BAJIEIN#LTR/Gypsy', 'Gypsy-72_OS-I#LTR/Gypsy', 'Copia-27_OS-I#LTR/Copia', 'Gypsy-248_OS-LTR#LTR/Gypsy', 'RIRE5-LTR_OS#LTR/Copia', 'Copia-76_OS-LTR#LTR/Copia', 'Gypsy-6B_OS-LTR#LTR/Gypsy', 'Gypsy-205_OS-I#LTR/Gypsy', 'CPSC4A_LTR#LTR/Copia', 'Gypsy-248_OS-I#LTR/Gypsy', 'RETROFIT2_I#LTR/Copia', 'SZ-54B_LTR#LTR/Gypsy', 'Copia-52_OS-I#LTR/Copia', 'OSR39_I#LTR/Gypsy', 'RETROFIT6_LTR#LTR/Copia', 'SZ-55_I#LTR/Copia', 'Gypsy-71_OS-LTR#LTR/Gypsy', 'SZ-22_LTR#LTR/Gypsy', 'LTR-11_OS-LTR#LTR', 'RETROSAT2LTRA#LTR/Gypsy', 'Gypsy-165_OS-LTR#LTR/Gypsy', 'RIRE5-I_OS#LTR/Copia', 'CPSC3_LTR#LTR/Copia', 'Copia-44_OS-LTR#LTR/Copia', 'Gypsy-80B_OS-LTR#LTR/Gypsy', 'SZ-25LTR#LTR/Copia', 'Gypsy-250_OS-LTR#LTR/Gypsy', 'Gypsy-86_OS-I#LTR/Gypsy', 'Gypsy-67_OS-I#LTR/Gypsy', 'Copia-114_OS-LTR#LTR/Copia', 'SZ-10_I#LTR/Gypsy', 'RETRO2B-LTR#LTR/Gypsy', 'GYPSO_LTR#LTR/Gypsy', 'Gypsy-115_OS-I#LTR/Gypsy', 'Copia-73_OS-I#LTR/Copia', 'Copia-19_OS-I#LTR/Copia', 'Gypsy-67_OS-LTR#LTR/Gypsy', 'SZ-56_LTR#LTR/Gypsy', 'Copia-103_OS-I#LTR/Copia', 'Gypsy-104_OS-I#LTR/Gypsy', 'GYPSY-B_LTR#LTR/Gypsy', 'Copia-135_OS-LTR#LTR/Copia', 'Gypsy-40_OS-LTR#LTR/Gypsy', 'RETROSOR2_I#LTR/Gypsy', 'Copia-43_OS-I#LTR/Copia', 'RIREXC_I#LTR/Gypsy', 'Copia-97_OS-I#LTR/Copia', 'SC-9_LTR#LTR/Copia', 'Copia-46_OS-LTR#LTR/Copia', 'Copia-49_OS-I#LTR/Copia', 'Copia-13B_OS-LTR#LTR/Copia', 'RETROSOR2_LTR#LTR/Gypsy', 'RETROSAT-3B_I#LTR/Gypsy', 'SZ-50_LTR#LTR/Gypsy', 'Copia-37_OS-LTR#LTR/Copia', 'Gypsy-25_OS-LTR#LTR/Gypsy', 'SZ-66B-LTR#LTR/Gypsy', 'LTR-18K_OS-LTR#LTR', 'Copia-5_OS-LTR#LTR/Copia', 'RETRO3_I#LTR/Gypsy', 'Copia-91_OS-I#LTR/Copia', 'Gypsy-25_OS-I#LTR/Gypsy', 'Gypsy-218_OS-LTR#LTR/Gypsy', 'Gypsy-92_OS-I#LTR/Gypsy', 'Copia-38_OS-LTR#LTR/Copia', 'Gypsy-56_OS-I#LTR/Gypsy', 'Gypsy-76_OS-LTR#LTR/Gypsy', 'Gypsy-91_OS-LTR#LTR/Gypsy', 'TRUNCATOR#LTR/Gypsy', 'SZ-7C-I#LTR/Gypsy', 'COPIA1-I_OS#LTR/Copia', 'Copia-67_OS-LTR#LTR/Copia', 'Copia-55_OS-LTR#LTR/Copia', 'Gypsy-75_OS-I#LTR/Gypsy', 'LTR-18E_OS-LTR#LTR', 'Gypsy-5_OS-I#LTR/Gypsy', 'SZ-59_I#LTR/Gypsy', 'Copia-122_OS-LTR#LTR/Copia', 'Gypsy-154_OS-I#LTR/Gypsy', 'COPIA3-I_OS#LTR/Copia', 'Gypsy-209_OS-LTR#LTR/Gypsy', 'CRM-LTR_OS#LTR', 'Gypsy-87_OS-LTR#LTR/Gypsy', 'Gypsy-135_OS-I#LTR/Gypsy', 'CRM-I_OS#LTR/Gypsy', 'Copia-14_OS-I#LTR/Copia', 'RETROFIT6_I#LTR/Copia', 'SC-6_I#LTR/Copia', 'Gypsy-154_OS-LTR#LTR/Gypsy', 'Gypsy-83_OS-I#LTR/Gypsy', 'RIREXH_I#LTR/Gypsy', 'Copia-87_OS-LTR#LTR/Copia', 'Gypsy-84_OS-LTR#LTR/Gypsy', 'SZ-54D_LTR#LTR/Gypsy', 'RETRO2_I#LTR/Gypsy', 'RIRE3_LTR#LTR/Gypsy', 'Gypsy-7_OS-LTR#LTR/Gypsy', 'Gypsy-212_OS-LTR#LTR/Gypsy', 'Copia-65_OS-I#LTR/Copia', 'Gypsy-96_OS-LTR#LTR/Gypsy', 'OSTONOR1_LTR#LTR/Copia', 'Gypsy-33C_OS-LTR#LTR/Gypsy', 'RIREXF_I#LTR/Gypsy', 'SZ-54A_LTR#LTR/Gypsy', 'Copia-134_OS-LTR#LTR/Copia', 'Gypsy-93_OS-LTR#LTR/Gypsy', 'RIREXG_I#LTR/Gypsy', 'Gypsy-3B_OS-I#LTR/Gypsy', 'Copia-46_OS-I#LTR/Copia', 'RIREX_LTR#LTR/Gypsy', 'Gypsy-225_OS-LTR#LTR/Gypsy', 'Gypsy-105_OS-LTR#LTR/Gypsy', 'Gypsy-182_OS-LTR#LTR/Gypsy', 'Gypsy-66_OS-I#LTR/Gypsy', 'Gypsy-81_OS-I#LTR/Gypsy', 'Copia-13_OS-LTR#LTR/Copia', 'Gypsy-224_OS-LTR#LTR/Gypsy', 'RIREXE_I#LTR/Gypsy', 'SZ-54_LTR#LTR/Gypsy', 'Gypsy-140_OS-I#LTR/Gypsy', 'Gypsy-206_OS-LTR#LTR/Gypsy', 'SZ-55B_LTR#LTR/Copia', 'Gypsy-145_OS-LTR#LTR/Gypsy', 'Copia-62_OS-I#LTR/Copia', 'Gypsy-25G_OS-LTR#LTR/Gypsy', 'Copia-47_OS-LTR#LTR/Copia', 'SC-10B_LTR#LTR/Copia', 'Gypsy-144_OS-I#LTR/Gypsy', 'Gypsy-35_OS-LTR#LTR/Gypsy', 'Gypsy-1_OSJ-I#LTR/Gypsy', 'LTR-33_OS-I#LTR', 'Copia-31_OS-LTR#LTR/Copia', 'SZ-54B_I#LTR/Gypsy', 'Gypsy-175_OS-I#LTR/Gypsy', 'SZ-37_LTR#LTR/Copia', 'Gypsy-225_OS-I#LTR/Gypsy', 'Gypsy-20C_OS-I#LTR/Gypsy', 'Gypsy-199_OS-I#LTR/Gypsy', 'Gypsy-171_OS-I#LTR/Gypsy', 'Copia-93_OS-LTR#LTR/Copia', 'RIRE8A_LTR#LTR/Gypsy', 'Gypsy-160_OS-I#LTR/Gypsy', 'Gypsy-247_OS-LTR#LTR/Gypsy', 'Gypsy-219_OS-I#LTR/Gypsy', 'ATLANTYS-I_OS#LTR/Gypsy', 'RIRE7_I#LTR/Gypsy', 'RETROFIT3_LTR#LTR/Copia', 'Gypsy-209C_OS-I#LTR/Gypsy', 'Copia-9_OS-I#LTR/Copia', 'SC-7_I#LTR/Copia', 'Copia-104_OS-LTR#LTR/Copia', 'Gypsy-6_OS-I#LTR/Gypsy', 'Gypsy-138_OS-I#LTR/Gypsy', 'RETROSAT6_LTR#LTR/Gypsy', 'SZ-33LTR#LTR/Gypsy', 'Copia-57_OS-LTR#LTR/Copia', 'SC-1_LTR#LTR/Copia', 'RETROSAT4_I#LTR/Gypsy', 'Gypsy-172B_OS-LTR#LTR/Gypsy', 'Gypsy-10B_OS-LTR#LTR/Gypsy', 'Gypsy-163_OS-LTR#LTR/Gypsy', 'Gypsy-8B_OS-LTR#LTR/Gypsy', 'Gypsy-118_OS-LTR#LTR/Gypsy', 'OSR39_LTR#LTR/Gypsy', 'GYPSI_I#LTR/Gypsy', 'RETROSAT3_I#LTR/Gypsy', 'Gypsy-217_OS-LTR#LTR/Gypsy', 'Copia-51_OS-LTR#LTR/Copia', 'Copia-16_OS-LTR#LTR/Copia', 'Copia-133_OS-I#LTR/Copia', 'SZ-56A_I#LTR/Gypsy', 'LTR-15_OS-I#LTR', 'GYPSY-A_I#LTR/Gypsy', 'Gypsy-74_OS-LTR#LTR/Gypsy', 'Copia-36_OS-LTR#LTR/Copia', 'Gypsy-113_OS-LTR#LTR/Gypsy', 'Copia-125_OS-LTR#LTR/Copia', 'Copia-76_OS-I#LTR/Copia', 'Gypsy-212_OS-I#LTR/Gypsy', 'Gypsy-5B_OS-I#LTR/Gypsy', 'Gypsy-44_OS-LTR#LTR/Gypsy', 'Copia-58_OS-LTR#LTR/Copia', 'LTR-15B_OS-I#LTR/Copia', 'Copia-51_OS-I#LTR/Copia', 'Copia-72_OS-LTR#LTR/Copia', 'RIRE3_I#LTR/Gypsy', 'Gypsy-127_OS-LTR#LTR/Gypsy', 'Gypsy-251_OS-LTR#LTR/Gypsy', 'SZ-54D_I#LTR/Gypsy', 'Copia-52_OS-LTR#LTR/Copia', 'Gypsy-101_OS-I#LTR/Gypsy', 'Copia-54_OS-I#LTR/Copia', 'OSR42_I#LTR/Gypsy', 'Gypsy-73_OS-I#LTR/Gypsy', 'RIREXB_I#LTR/Gypsy', 'COPI2_LTR#LTR/Copia', 'Gypsy-66_OS-LTR#LTR/Gypsy', 'Gypsy-176_OS-LTR#LTR/Gypsy', 'RIRE8B_I#LTR/Gypsy', 'Gypsy-208_OS-I#LTR/Gypsy', 'Copia-115_OS-I#LTR/Copia', 'SC9A_LTR#LTR/Copia', 'Gypsy-163_OS-I#LTR/Gypsy', 'LTR-18F_OS-I#LTR/Gypsy', 'Gypsy-87_OS-I#LTR/Gypsy', 'Gypsy-264_OS-I#LTR/Gypsy', 'LTR10_OS#LTR', 'OSR38_I#LTR/Gypsy', 'Copia-43_OS-LTR#LTR/Copia', 'Gypsy-146B_OS-LTR#LTR/Gypsy', 'Gypsy-20_OS-LTR#LTR/Gypsy', 'Copia-132_OS-I#LTR/Copia', 'RETROSAT2LTR#LTR/Gypsy', 'RIREXD_I#LTR/Gypsy', 'RIRE8D_I#LTR/Gypsy', 'RETROSAT6_I#LTR/Gypsy', 'Gypsy-81_OS-LTR#LTR/Gypsy', 'Gypsy-145_OS-I#LTR/Gypsy', 'Gypsy-284_OS-I#LTR/Gypsy', 'SC-9_I#LTR/Copia', 'TRUNCATOR2_LTR#LTR/Gypsy', 'Gypsy-80_OS-LTR#LTR/Gypsy', 'Gypsy-213_OS-LTR#LTR/Gypsy', 'Gypsy-276_OS-I#LTR/Gypsy', 'Gypsy-56_OS-LTR#LTR/Gypsy', 'Gypsy-61_OS-LTR#LTR/Gypsy', 'SZ-54C_I#LTR/Gypsy', 'RETROFIT7_I#LTR/Copia', 'Gypsy-188_OS-I#LTR/Gypsy', 'Gypsy-33_OS-LTR#LTR/Gypsy', 'Gypsy-169_OS-LTR#LTR/Gypsy', 'Gypsy-25D_OS-LTR#LTR/Gypsy', 'Gypsy-102_OS-LTR#LTR/Gypsy', 'SZ-7A_LTR#LTR/Gypsy', 'Copia-38_OS-I#LTR/Copia', 'SC-3_I#LTR/Copia', 'COPI2_I#LTR/Copia', 'COPIA2-LTR_OS#LTR/Copia', 'SZ-56A_LTR#LTR/Gypsy', 'Gypsy-3_OS-I#LTR/Gypsy', 'Gypsy-65_OS-LTR#LTR/Gypsy', 'Gypsy-168_OS-LTR#LTR/Gypsy', 'Copia-61_OS-LTR#LTR/Copia', 'Gypsy-125_OS-LTR#LTR/Gypsy', 'Copia-96_OS-LTR#LTR/Copia', 'Copia-90_OS-I#LTR/Copia', 'Copia-90_OS-LTR#LTR/Copia', 'RETROSAT3_LTR#LTR/Gypsy', 'Gypsy-126_OS-LTR#LTR/Gypsy', 'GYPSO_I#LTR/Gypsy', 'Gypsy-90_OS-LTR#LTR/Gypsy', 'Copia-101_OS-I#LTR/Copia', 'rn_179-105_IR#LTR/Copia', 'Gypsy-173_OS-I#LTR/Gypsy', 'RETROSAT2_I#LTR/Gypsy', 'Copia-118_OS-I#LTR/Copia', 'LTR-26_OS-I#LTR/Gypsy', 'OSTONOR-1B_LTR#LTR/Copia', 'RIRE8A_I#LTR/Gypsy', 'Gypsy-102_OS-I#LTR/Gypsy', 'SZ-55C_LTR#LTR/Copia', 'SZ-64_I#LTR/Gypsy', 'LTR-26_OS-LTR#LTR', 'Copia-57_OS-I#LTR/Copia', 'SZ-50_I#LTR/Gypsy', 'Gypsy-89_OS-LTR#LTR/Gypsy', 'Gypsy-179B_OS-LTR#LTR/Gypsy', 'Copia-101_OS-LTR#LTR/Copia', 'Copia-41_OS-LTR#LTR/Copia', 'Copia-19_OS-LTR#LTR/Copia', 'Gypsy-255_OS-LTR#LTR/Gypsy', 'COPI1_I#LTR/Copia', 'Copia-131_OS-LTR#LTR/Copia', 'Gypsy-7B_OS-I#LTR/Gypsy', 'SZ-7B-LTR#LTR/Gypsy', 'Gypsy-25F_OS-LTR#LTR/Gypsy', 'LTR-36_OS-LTR#LTR', 'Copia-65_OS-LTR#LTR/Copia', 'Gypsy-180_OS-LTR#LTR/Gypsy', 'Copia-7_OS-LTR#LTR/Copia', 'Gypsy-126_OS-I#LTR/Gypsy', 'Copia-55_OS-I#LTR/Copia', 'Gypsy-250_OS-I#LTR/Gypsy', 'RIREXJ_I#LTR/Gypsy', 'Gypsy-103_OS-LTR#LTR/Gypsy', 'SZ-63_I#LTR/Gypsy', 'Gypsy-74_OS-I#LTR/Gypsy', 'Gypsy-246_OS-I#LTR/Gypsy', 'Gypsy-118_OS-I#LTR/Gypsy', 'Copia-132_OS-LTR#LTR/Copia', 'Gypsy-254_OS-LTR#LTR/Gypsy', 'Gypsy-95_OS-I#LTR/Gypsy', 'Copia-107_OS-LTR#LTR/Copia', 'Gypsy-47_OS-LTR#LTR/Gypsy', 'Gypsy-111_OS-LTR#LTR/Gypsy', 'Gypsy-254_OS-I#LTR/Gypsy', 'Gypsy-119_OS-LTR#LTR/Gypsy', 'Gypsy-135_OS-LTR#LTR/Gypsy', 'Copia-31_OS-I#LTR/Copia', 'OSTONOR-1B_I#LTR/Copia', 'SZ-31B-LTR#LTR/Gypsy', 'COPIO_I#LTR/Copia', 'SZ-53_LTR#LTR/Gypsy', 'Copia-49_OS-LTR#LTR/Copia', 'Copia-135_OS-I#LTR/Copia', 'Gypsy-8_OS-LTR#LTR/Gypsy', 'Copia-107_OS-I#LTR/Copia', 'SZ-7_I#LTR/Gypsy', 'RETROSAT-2C_LTR#LTR/Gypsy', 'SC-10_LTR#LTR/Copia', 'SZ-46I#LTR/Gypsy', 'LTR-34_OS-LTR#LTR', 'OSCOPIA2_LTR#LTR/Copia', 'Gypsy-95_OS-LTR#LTR/Gypsy', 'Gypsy-40_OS-I#LTR/Gypsy', 'Gypsy-5E_OS-LTR#LTR/Gypsy', 'OSR3_I#LTR/Gypsy', 'Copia-23_OS-LTR#LTR/Copia', 'SZ-59_LTR#LTR/Gypsy', 'Copia-54_OS-LTR#LTR/Copia', 'Copia-37_OS-I#LTR/Copia', 'LTR-22_OS-LTR#LTR', 'Gypsy-110_OS-LTR#LTR/Gypsy', 'Gypsy-108_OS-LTR#LTR/Gypsy', 'Gypsy-111_OS-I#LTR/Gypsy', 'Gypsy-196_OS-I#LTR/Gypsy', 'Copia-75_OS-LTR#LTR/Copia', 'Gypsy-165_OS-I#LTR/Gypsy', 'SZ-55_LTR#LTR/Copia', 'Gypsy-91_OS-I#LTR/Gypsy', 'Gypsy-20B_OS-I#LTR/Gypsy', 'Copia-110_OS-I#LTR/Copia', 'Gypsy-144_OS-LTR#LTR/Gypsy', 'Copia-17_OS-I#LTR/Copia', 'RETRO3C_LTR#LTR/Gypsy', 'SC-8_I#LTR/Copia', 'Gypsy-64_OS-LTR#LTR/Gypsy', 'RETRO2A_LTR#LTR/Gypsy', 'Copia-123_OS-LTR#LTR/Copia', 'Gypsy-8_OS-I#LTR/Gypsy', 'Gypsy-209B_OS-I#LTR/Gypsy', 'Gypsy-218_OS-I#LTR/Gypsy', 'LTR-33_OS-LTR#LTR', 'SZ-37_I#LTR/Copia', 'Copia-136_OS-LTR#LTR/Copia', 'Gypsy-171_OS-LTR#LTR/Gypsy', 'Gypsy-92_OS-LTR#LTR/Gypsy', 'LTR-35_OS-LTR#LTR', 'Gypsy-22_OS-LTR#LTR/Gypsy', 'Copia-16_OS-I#LTR/Copia', 'Gypsy-130B_OS-LTR#LTR/Gypsy', 'RIREXI_I#LTR/Gypsy', 'Gypsy-170_OS-I#LTR/Gypsy', 'Gypsy-107_OS-LTR#LTR/Gypsy', 'RIRE8D_LTR#LTR/Gypsy', 'SZ-54_I#LTR/Gypsy', 'Gypsy-179_OS-I#LTR/Gypsy', 'Gypsy-96_OS-I#LTR/Gypsy', 'COPIA1-LTR_OS#LTR/Copia', 'SC-3_LTR#LTR/Copia', 'SZ-9LTR#LTR/Copia', 'Copia-95_OS-LTR#LTR/Copia', 'LTR-15_OS-LTR#LTR', 'CPR1_LTR#LTR/Copia', 'LTR-22_OS-I#LTR', 'GYPSY1-LTR_OS#LTR/Gypsy', 'Copia-9_OS-LTR#LTR/Copia', 'CPSC2_I#LTR/Copia', 'Gypsy-188_OS-LTR#LTR/Gypsy', 'Gypsy-22_OS-I#LTR/Gypsy', 'BAJIELTR#LTR/Gypsy', 'GYPSY1-I_OS#LTR/Gypsy', 'OSTONOR1_I#LTR/Copia', 'RN12_LTR#LTR/Gypsy', 'Copia-93_OS-I#LTR/Copia', 'Gypsy-47_OS-I#LTR/Gypsy', 'Gypsy-220_OS-I#LTR/Gypsy', 'Gypsy-146B_OS-I#LTR/Gypsy', 'Gypsy-65_OS-I#LTR/Gypsy', 'Gypsy-83_OS-LTR#LTR/Gypsy', 'Gypsy-33_OS-I#LTR/Gypsy', 'RETROSAT5_LTR#LTR/Gypsy', 'Copia-44_OS-I#LTR/Copia', 'SZ-7A_I#LTR/Gypsy', 'COPIO_LTR#LTR/Copia', 'LTR-11C_OS-I#LTR', 'Gypsy-113_OS-I#LTR/Gypsy', 'Copia-131_OS-I#LTR/Copia', 'Copia-114_OS-I#LTR/Copia', 'Gypsy-103_OS-I#LTR/Gypsy', 'Gypsy-170_OS-LTR#LTR/Gypsy', 'Gypsy-224_OS-I#LTR/Gypsy', 'Gypsy-227_OS-LTR#LTR/Gypsy', 'Gypsy-223_OS-LTR#LTR/Gypsy', 'CPSC3_I#LTR/Copia', 'ATLANTYS-LTR_OS#LTR/Gypsy', 'GYPSY-B_I#LTR/Gypsy', 'SZ-36LTR#LTR/Gypsy', 'Copia-95_OS-I#LTR/Copia', 'Copia-67_OS-I#LTR/Copia', 'RIREXD2_I#LTR/Gypsy', 'SZ-54A_I#LTR/Gypsy', 'Gypsy-207_OS-I#LTR/Gypsy', 'LTR-28_OS-LTR#LTR/Gypsy', 'Gypsy-119_OS-I#LTR/Gypsy', 'Copia-64_OS-LTR#LTR/Copia', 'SC-7_LTR#LTR/Copia', 'Gypsy-234_OS-I#LTR/Gypsy', 'SC-10_I#LTR/Copia', 'Gypsy-106_OS-LTR#LTR/Gypsy', 'RIRE3A_LTR#LTR/Gypsy', 'RETROFIT7_LTR#LTR/Copia', 'rn_179-105_LTR#LTR/Copia', 'RIRE2_I#LTR/Gypsy', 'Copia-11_OS-I#LTR/Copia', 'LTR-28_OS-I#LTR/Gypsy', 'OSR3_LTR#LTR/Gypsy', 'Gypsy-73_OS-LTR#LTR/Gypsy', 'Gypsy-25B_OS-LTR#LTR/Gypsy', 'Copia-133_OS-LTR#LTR/Copia', 'Copia-58_OS-I#LTR/Copia', 'SZ-8_LTR#LTR/Gypsy', 'RN12_I#LTR/Gypsy', 'Gypsy-192_OS-I#LTR/Gypsy', 'Copia-81_OS-I#LTR/Copia', 'LTR-38_OS-LTR#LTR', 'Copia-85_OS-LTR#LTR/Copia', 'Gypsy-20D_OS-I#LTR/Gypsy', 'SZ-b-LTR#LTR/Gypsy', 'Copia-39_OS-I#LTR/Copia', 'Gypsy-35_OS-I#LTR/Gypsy', 'Gypsy-178_OS-LTR#LTR/Gypsy', 'Copia-123_OS-I#LTR/Copia', 'RETROFIT3_I#LTR/Copia', 'LTR-34_OS-I#LTR', 'SC-1_I#LTR/Copia', 'Gypsy-21_OS-LTR#LTR/Gypsy', 'Gypsy-77_OS-LTR#LTR/Gypsy', 'Gypsy-223_OS-I#LTR/Gypsy', 'Gypsy-80_OS-I#LTR/Gypsy', 'SZ-17_LTR#LTR/Copia', 'Gypsy-166_OS-LTR#LTR/Gypsy', 'Gypsy-219B_OS-LTR#LTR/Gypsy', 'SZ-7C-LTR#LTR/Gypsy', 'Gypsy-62_OS-LTR#LTR/Gypsy', 'OSCOPIA1_I#LTR/Copia', 'LTR-23B_OS-LTR#LTR', 'Gypsy-28_OS-LTR#LTR/Gypsy', 'RIREXK_I#LTR/Gypsy', 'OSR42_LTR#LTR/Gypsy', 'RETROFIT_I#LTR/Copia', 'Gypsy-231_OS-I#LTR/Gypsy', 'SZ-56_I#LTR/Gypsy', 'Gypsy-104_OS-LTR#LTR/Gypsy', 'GYPSI_LTR#LTR/Gypsy', 'Copia-97_OS-LTR#LTR/Copia', 'Gypsy-199_OS-LTR#LTR/Gypsy', 'Gypsy-75_OS-LTR#LTR/Gypsy', 'Copia-62_OS-LTR#LTR/Copia', 'GYPSY-A_LTR#LTR/Gypsy', 'Copia-63_OS-LTR#LTR/Copia', 'SZ-66C_LTR#LTR/Gypsy', 'Gypsy-196_OS-LTR#LTR/Gypsy', 'Copia-17B_OS-LTR#LTR/Copia', 'Copia-87_OS-I#LTR/Copia', 'OSR38_LTR#LTR/Gypsy', 'SC-6_LTR#LTR/Copia', 'Gypsy-100_OS-LTR#LTR/Gypsy', 'Gypsy-40B_OS-LTR#LTR/Gypsy', 'Copia-103_OS-LTR#LTR/Copia', 'Copia-36_OS-I#LTR/Copia', 'Gypsy-62_OS-I#LTR/Gypsy', 'RETRO2A_I#LTR/Gypsy', 'LTR-36_OS-I#LTR', 'Gypsy-71_OS-I#LTR/Gypsy', 'Gypsy-234_OS-LTR#LTR/Gypsy', 'Gypsy-176_OS-I#LTR/Gypsy', 'SZ-53_I#LTR/Gypsy', 'Gypsy-174_OS-LTR#LTR/Gypsy', 'SC-4_LTR#LTR/Copia', 'Gypsy-25H_OS-LTR#LTR/Gypsy', 'SZ-52_I#LTR/Gypsy', 'Gypsy-90_OS-I#LTR/Gypsy', 'Gypsy-173_OS-LTR#LTR/Gypsy', 'Gypsy-89_OS-I#LTR/Gypsy', 'SZ-52_LTR#LTR/Gypsy', 'Copia-81_OS-LTR#LTR/Copia', 'Gypsy-208_OS-LTR#LTR/Gypsy', 'Gypsy-100_OS-I#LTR/Gypsy', 'Gypsy-284_OS-LTR#LTR/Gypsy', 'Copia-98_OS-LTR#LTR/Copia', 'Gypsy-207_OS-LTR#LTR/Gypsy', 'LTR-27_OS-LTR#LTR/Gypsy', 'Gypsy-180_OS-I#LTR/Gypsy', 'Gypsy-3_OS-LTR#LTR/Gypsy', 'Copia-14_OS-LTR#LTR/Copia', 'Gypsy-215_OS-I#LTR/Gypsy', 'RIRE7_LTR#LTR/Gypsy', 'Gypsy-285_OS-LTR#LTR/Gypsy', 'Gypsy-140_OS-LTR#LTR/Gypsy', 'Gypsy-206_OS-I#LTR/Gypsy', 'RIRE3A_I#LTR/Gypsy', 'CRMA1_I#LTR/Gypsy', 'SC-8B_LTR#LTR/Copia', 'Gypsy-7B_OS-LTR#LTR/Gypsy', 'Gypsy-127_OS-I#LTR/Gypsy', 'Gypsy-116_OS-I#LTR/Gypsy', 'Gypsy-169_OS-I#LTR/Gypsy', 'Gypsy-175_OS-LTR#LTR/Gypsy', 'Gypsy-10B_OS-I#LTR/Gypsy', 'RETROFIT2_LTR#LTR/Copia', 'LTR-35_OS-I#LTR', 'Gypsy-246_OS-LTR#LTR/Gypsy', 'Gypsy-1_OSJ-LTR#LTR/Gypsy', 'Copia-41_OS-I#LTR/Copia', 'Copia-64_OS-I#LTR/Copia', 'LTR-22B_OS-I#LTR', 'Gypsy-125_OS-I#LTR/Gypsy', 'Copia-13_OS-I#LTR/Copia', 'Copia-11B_OS-LTR#LTR/Copia', 'Gypsy-7_OS-I#LTR/Gypsy', 'Copia-120_OS-LTR#LTR/Copia', 'Gypsy-110_OS-I#LTR/Gypsy', 'Gypsy-7C_OS-I#LTR/Gypsy', 'Gypsy-93_OS-I#LTR/Gypsy', 'Gypsy-21_OS-I#LTR/Gypsy', 'Copia-73_OS-LTR#LTR/Copia', 'RETROFIT4_LTR#LTR/Copia', 'Gypsy-192_OS-LTR#LTR/Gypsy', 'Copia-40_OS-LTR#LTR/Copia', 'SZ-63_LTR#LTR/Gypsy', 'Gypsy-77_OS-I#LTR/Gypsy', 'CPSC2_LTR#LTR/Copia', 'Copia-18_OS-LTR#LTR/Copia', 'Gypsy-253_OS-LTR#LTR/Gypsy', 'Copia-61_OS-I#LTR/Copia', 'Gypsy-228_OS-LTR#LTR/Gypsy', 'Gypsy-105_OS-I#LTR/Gypsy', 'SZ-67LTR#LTR', 'SZ-4_LTR#LTR/Gypsy'}
-    #
-    # set2 = {'SZ-7B-I#LTR/Gypsy', 'Copia-87_OS-LTR#LTR/Copia', 'Gypsy-5_OS-I#LTR/Gypsy', 'SC-3_LTR#LTR/Copia', 'Gypsy-127_OS-I#LTR/Gypsy', 'SZ-54B_I#LTR/Gypsy', 'OSR39_LTR#LTR/Gypsy', 'Copia-41_OS-I#LTR/Copia', 'RIRE3A_LTR#LTR/Gypsy', 'OSCOPIA2_LTR#LTR/Copia', 'RETROSAT-2C_LTR#LTR/Gypsy', 'RETRO3_LTR#LTR/Gypsy', 'Gypsy-228_OS-LTR#LTR/Gypsy', 'Gypsy-234_OS-LTR#LTR/Gypsy', 'Copia-123_OS-LTR#LTR/Copia', 'Gypsy-25_OS-LTR#LTR/Gypsy', 'Copia-55_OS-I#LTR/Copia', 'RIRE5-I_OS#LTR/Copia', 'RETROSAT5_I#LTR/Gypsy', 'Copia-39_OS-I#LTR/Copia', 'LTR-15_OS-LTR#LTR', 'Gypsy-3B_OS-I#LTR/Gypsy', 'SZ-33LTR#LTR/Gypsy', 'Copia-120_OS-LTR#LTR/Copia', 'Gypsy-20D_OS-I#LTR/Gypsy', 'Copia-123_OS-I#LTR/Copia', 'Gypsy-217_OS-LTR#LTR/Gypsy', 'Gypsy-250_OS-LTR#LTR/Gypsy', 'Copia-110_OS-LTR#LTR/Copia', 'Copia-133_OS-LTR#LTR/Copia', 'Copia-108_OS-LTR#LTR/Copia', 'Gypsy-25C_OS-LTR#LTR/Gypsy', 'Copia-52_OS-I#LTR/Copia', 'LTR-36_OS-I#LTR', 'RETROSAT2_I#LTR/Gypsy', 'SC-6_I#LTR/Copia', 'OSR3_LTR#LTR/Gypsy', 'SZ-53_LTR#LTR/Gypsy', 'Gypsy-205_OS-I#LTR/Gypsy', 'LTR-35_OS-LTR#LTR', 'Copia-64_OS-I#LTR/Copia', 'Gypsy-231_OS-LTR#LTR/Gypsy', 'CRM-I_OS#LTR/Gypsy', 'Gypsy-173_OS-I#LTR/Gypsy', 'CPSC2_I#LTR/Copia', 'SZ-57_LTR#LTR', 'RETROSAT-3B_LTR#LTR/Gypsy', 'Gypsy-71_OS-LTR#LTR/Gypsy', 'LTR-22_OS-I#LTR', 'SZ-4_I#LTR/Gypsy', 'Gypsy-22_OS-LTR#LTR/Gypsy', 'SC-4_LTR#LTR/Copia', 'Copia-131_OS-I#LTR/Copia', 'Copia-11_OS-I#LTR/Copia', 'Gypsy-1_OSJ-I#LTR/Gypsy', 'Gypsy-130C_OS-LTR#LTR/Gypsy', 'LTR-26_OS-LTR#LTR', 'SZ-54B_LTR#LTR/Gypsy', 'Copia-81_OS-I#LTR/Copia', 'Gypsy-116_OS-LTR#LTR/Gypsy', 'SZ-64_I#LTR/Gypsy', 'RETROFIT4_LTR#LTR/Copia', 'Gypsy-224_OS-I#LTR/Gypsy', 'Gypsy-100_OS-LTR#LTR/Gypsy', 'Copia-114_OS-I#LTR/Copia', 'Gypsy-46_OS-I#LTR/Gypsy', 'OSTONOR-1B_I#LTR/Copia', 'Gypsy-119_OS-I#LTR/Gypsy', 'Gypsy-223_OS-LTR#LTR/Gypsy', 'SZ-55_I#LTR/Copia', 'COPIA2-I_OS#LTR/Copia', 'Gypsy-56_OS-LTR#LTR/Gypsy', 'Copia-76_OS-I#LTR/Copia', 'Gypsy-83_OS-I#LTR/Gypsy', 'Copia-13_OS-LTR#LTR/Copia', 'Gypsy-77_OS-LTR#LTR/Gypsy', 'Gypsy-178_OS-LTR#LTR/Gypsy', 'Gypsy-170_OS-I#LTR/Gypsy', 'Copia-19_OS-LTR#LTR/Copia', 'SC-4_I#LTR/Copia', 'Copia-104_OS-LTR#LTR/Copia', 'Copia-51_OS-I#LTR/Copia', 'Copia-44_OS-LTR#LTR/Copia', 'Gypsy-171_OS-I#LTR/Gypsy', 'Gypsy-145_OS-I#LTR/Gypsy', 'SZ-31B-LTR#LTR/Gypsy', 'SZ-46I#LTR/Gypsy', 'Copia-47_OS-I#LTR/Copia', 'Gypsy-5E_OS-LTR#LTR/Gypsy', 'SZ-22_I#LTR/Gypsy', 'RETRO2_LTR#LTR/Gypsy', 'SZ-54D_I#LTR/Gypsy', 'RETROSAT3_I#LTR/Gypsy', 'Copia-134_OS-LTR#LTR/Copia', 'Copia-41_OS-LTR#LTR/Copia', 'Copia-31_OS-I#LTR/Copia', 'Copia-76_OS-LTR#LTR/Copia', 'COPIA2-LTR_OS#LTR/Copia', 'LTR-33_OS-I#LTR', 'Gypsy-154_OS-I#LTR/Gypsy', 'SZ-8_LTR#LTR/Gypsy', 'SC-8_I#LTR/Copia', 'CRM-LTR_OS#LTR', 'SC-7_LTR#LTR/Copia', 'Gypsy-209_OS-LTR#LTR/Gypsy', 'Gypsy-6_OS-I#LTR/Gypsy', 'Copia-118_OS-I#LTR/Copia', 'Gypsy-248_OS-I#LTR/Gypsy', 'Gypsy-6B_OS-LTR#LTR/Gypsy', 'Copia-118_OS-LTR#LTR/Copia', 'LTR-18F_OS-LTR#LTR/Gypsy', 'Gypsy-249_OS-I#LTR/Gypsy', 'RIRE2_I#LTR/Gypsy', 'Copia-7_OS-LTR#LTR/Copia', 'Gypsy-218_OS-LTR#LTR/Gypsy', 'LTR-22_OS-LTR#LTR', 'Gypsy-212_OS-I#LTR/Gypsy', 'Gypsy-192_OS-I#LTR/Gypsy', 'Gypsy-125_OS-I#LTR/Gypsy', 'Gypsy-101_OS-LTR#LTR/Gypsy', 'CPR1_LTR#LTR/Copia', 'Gypsy-248_OS-LTR#LTR/Gypsy', 'RETROFIT6_I#LTR/Copia', 'LTR-18E_OS-LTR#LTR', 'RIREXE_I#LTR/Gypsy', 'SZ-56A_I#LTR/Gypsy', 'TRUNCATOR2_LTR#LTR/Gypsy', 'Copia-136_OS-LTR#LTR/Copia', 'Copia-101_OS-I#LTR/Copia', 'RIREX_LTR#LTR/Gypsy', 'Gypsy-175_OS-LTR#LTR/Gypsy', 'Copia-93_OS-I#LTR/Copia', 'Gypsy-138_OS-LTR#LTR/Gypsy', 'SZ-56_LTR#LTR/Gypsy', 'LTR-11C_OS-I#LTR', 'Copia-9_OS-I#LTR/Copia', 'Gypsy-76_OS-I#LTR/Gypsy', 'OSCOPIA1_I#LTR/Copia', 'Copia-96_OS-I#LTR/Copia', 'Gypsy-106_OS-I#LTR/Gypsy', 'SC-9_LTR#LTR/Copia', 'GYPSO_I#LTR/Gypsy', 'Copia-110_OS-I#LTR/Copia', 'Gypsy-110_OS-LTR#LTR/Gypsy', 'Copia-43_OS-I#LTR/Copia', 'Copia-9_OS-LTR#LTR/Copia', 'LTR-38_OS-LTR#LTR', 'Gypsy-225_OS-LTR#LTR/Gypsy', 'Copia-57_OS-LTR#LTR/Copia', 'SZ-63_I#LTR/Gypsy', 'Copia-36_OS-LTR#LTR/Copia', 'RIRE8A_LTR#LTR/Gypsy', 'GYPSY-A_I#LTR/Gypsy', 'SZ-10_I#LTR/Gypsy', 'RETROFIT4_I#LTR/Copia', 'SC-1_LTR#LTR/Copia', 'Gypsy-165_OS-LTR#LTR/Gypsy', 'Gypsy-253_OS-LTR#LTR/Gypsy', 'Gypsy-86_OS-I#LTR/Gypsy', 'GYPSY-A_LTR#LTR/Gypsy', 'RIRE3_I#LTR/Gypsy', 'Gypsy-35_OS-LTR#LTR/Gypsy', 'RIRE8A_I#LTR/Gypsy', 'GYPSY-B_I#LTR/Gypsy', 'SZ-b-LTR#LTR/Gypsy', 'RETRO3_I#LTR/Gypsy', 'RETROSAT6_LTR#LTR/Gypsy', 'RIREXH_I#LTR/Gypsy', 'Copia-81_OS-LTR#LTR/Copia', 'Copia-58_OS-LTR#LTR/Copia', 'LTR-15B_OS-I#LTR/Copia', 'Gypsy-246_OS-LTR#LTR/Gypsy', 'Gypsy-145_OS-LTR#LTR/Gypsy', 'OSR38_I#LTR/Gypsy', 'Gypsy-166_OS-LTR#LTR/Gypsy', 'RETROFIT_I#LTR/Copia', 'RETRO3C_LTR#LTR/Gypsy', 'LTR-33_OS-LTR#LTR', 'Gypsy-75_OS-I#LTR/Gypsy', 'Copia-38_OS-I#LTR/Copia', 'Gypsy-25F_OS-LTR#LTR/Gypsy', 'RETRO2_I#LTR/Gypsy', 'Gypsy-140_OS-I#LTR/Gypsy', 'Gypsy-135_OS-LTR#LTR/Gypsy', 'Gypsy-103_OS-I#LTR/Gypsy', 'Gypsy-44_OS-LTR#LTR/Gypsy', 'Copia-38_OS-LTR#LTR/Copia', 'Gypsy-91_OS-I#LTR/Gypsy', 'Gypsy-10B_OS-I#LTR/Gypsy', 'Gypsy-1_OSJ-LTR#LTR/Gypsy', 'Copia-67_OS-LTR#LTR/Copia', 'Copia-44_OS-I#LTR/Copia', 'SC-10B_LTR#LTR/Copia', 'Gypsy-107_OS-LTR#LTR/Gypsy', 'Copia-97_OS-LTR#LTR/Copia', 'COPIA3-I_OS#LTR/Copia', 'OSR38_LTR#LTR/Gypsy', 'SZLTR#LTR/Gypsy', 'Gypsy-160_OS-LTR#LTR/Gypsy', 'RIRE8D_LTR#LTR/Gypsy', 'SZ-54A_I#LTR/Gypsy', 'COPIA3-LTR_OS#LTR/Copia', 'RETROFIT7_I#LTR/Copia', 'Gypsy-56_OS-I#LTR/Gypsy', 'OSR39_I#LTR/Gypsy', 'Gypsy-223_OS-I#LTR/Gypsy', 'LTR-34_OS-I#LTR', 'LTR-18F_OS-I#LTR/Gypsy', 'Gypsy-135_OS-I#LTR/Gypsy', 'Gypsy-81_OS-I#LTR/Gypsy', 'Gypsy-284_OS-LTR#LTR/Gypsy', 'Gypsy-111_OS-LTR#LTR/Gypsy', 'Gypsy-102_OS-LTR#LTR/Gypsy', 'Gypsy-127_OS-LTR#LTR/Gypsy', 'OSR42_LTR#LTR/Gypsy', 'Gypsy-95_OS-LTR#LTR/Gypsy', 'Gypsy-5B_OS-I#LTR/Gypsy', 'RETROSAT6_I#LTR/Gypsy', 'Copia-75_OS-LTR#LTR/Copia', 'Copia-95_OS-I#LTR/Copia', 'Gypsy-180_OS-LTR#LTR/Gypsy', 'Gypsy-206_OS-I#LTR/Gypsy', 'Copia-49_OS-LTR#LTR/Copia', 'Copia-47_OS-LTR#LTR/Copia', 'Copia-13B_OS-LTR#LTR/Copia', 'Gypsy-20_OS-LTR#LTR/Gypsy', 'RETRO3D_LTR#LTR/Gypsy', 'Gypsy-255_OS-LTR#LTR/Gypsy', 'Copia-5_OS-LTR#LTR/Copia', 'Copia-72_OS-LTR#LTR/Copia', 'RETROSAT5_LTR#LTR/Gypsy', 'RIRE7_LTR#LTR/Gypsy', 'Gypsy-96_OS-LTR#LTR/Gypsy', 'Gypsy-81_OS-LTR#LTR/Gypsy', 'Copia-39_OS-LTR#LTR/Copia', 'Gypsy-101_OS-I#LTR/Gypsy', 'SZ-37_LTR#LTR/Copia', 'RETROFIT3_LTR#LTR/Copia', 'Gypsy-66_OS-I#LTR/Gypsy', 'OSCOPIA1_LTR#LTR/Copia', 'Gypsy-108_OS-LTR#LTR/Gypsy', 'RETROFIT2_I#LTR/Copia', 'Copia-14_OS-LTR#LTR/Copia', 'RETROSAT4_LTR#LTR/Gypsy', 'Gypsy-33_OS-LTR#LTR/Gypsy', 'Gypsy-93_OS-LTR#LTR/Gypsy', 'Gypsy-67_OS-I#LTR/Gypsy', 'Copia-36_OS-I#LTR/Copia', 'RETROSAT2LTRA#LTR/Gypsy', 'Gypsy-113_OS-I#LTR/Gypsy', 'Copia-43_OS-LTR#LTR/Copia', 'Gypsy-61_OS-I#LTR/Gypsy', 'GYPSY1-I_OS#LTR/Gypsy', 'Gypsy-25G_OS-LTR#LTR/Gypsy', 'SZ-52_I#LTR/Gypsy', 'SZ-56A_LTR#LTR/Gypsy', 'Gypsy-3_OS-LTR#LTR/Gypsy', 'RETROSAT2LTR#LTR/Gypsy', 'Gypsy-76_OS-LTR#LTR/Gypsy', 'Gypsy-102_OS-I#LTR/Gypsy', 'Gypsy-218_OS-I#LTR/Gypsy', 'Gypsy-73_OS-LTR#LTR/Gypsy', 'OSTONOR-1B_LTR#LTR/Copia', 'Copia-31_OS-LTR#LTR/Copia', 'Copia-95_OS-LTR#LTR/Copia', 'RN12_I#LTR/Gypsy', 'LTR-35_OS-I#LTR', 'Copia-16_OS-I#LTR/Copia', 'SC-7_I#LTR/Copia', 'Copia-17B_OS-LTR#LTR/Copia', 'Gypsy-146B_OS-I#LTR/Gypsy', 'Copia-46_OS-I#LTR/Copia', 'Gypsy-207_OS-I#LTR/Gypsy', 'SZ-59_LTR#LTR/Gypsy', 'RN12_LTR#LTR/Gypsy', 'Gypsy-118_OS-I#LTR/Gypsy', 'Copia-108_OS-I#LTR/Copia', 'RETRO2B-LTR#LTR/Gypsy', 'Copia-98_OS-LTR#LTR/Copia', 'Gypsy-188_OS-LTR#LTR/Gypsy', 'Gypsy-80_OS-LTR#LTR/Gypsy', 'Copia-23_OS-LTR#LTR/Copia', 'rn_179-105_LTR#LTR/Copia', 'Gypsy-92_OS-I#LTR/Gypsy', 'SC9A_LTR#LTR/Copia', 'Gypsy-140_OS-LTR#LTR/Gypsy', 'Gypsy-110_OS-I#LTR/Gypsy', 'Gypsy-66_OS-LTR#LTR/Gypsy', 'Gypsy-160_OS-I#LTR/Gypsy', 'SZ-54_LTR#LTR/Gypsy', 'TRUNCATOR#LTR/Gypsy', 'Gypsy-10B_OS-LTR#LTR/Gypsy', 'Copia-49_OS-I#LTR/Copia', 'Gypsy-170_OS-LTR#LTR/Gypsy', 'Copia-58_OS-I#LTR/Copia', 'Gypsy-285_OS-LTR#LTR/Gypsy', 'Gypsy-87_OS-LTR#LTR/Gypsy', 'Gypsy-126_OS-I#LTR/Gypsy', 'Gypsy-199_OS-LTR#LTR/Gypsy', 'Copia-37_OS-LTR#LTR/Copia', 'Copia-14B_OS-I#LTR/Copia', 'Gypsy-103_OS-LTR#LTR/Gypsy', 'Gypsy-246_OS-I#LTR/Gypsy', 'COPIO_LTR#LTR/Copia', 'SZ-7B-LTR#LTR/Gypsy', 'Gypsy-119_OS-LTR#LTR/Gypsy', 'COPIO_I#LTR/Copia', 'Gypsy-25D_OS-LTR#LTR/Gypsy', 'Gypsy-83_OS-LTR#LTR/Gypsy', 'SZ-53_I#LTR/Gypsy', 'Gypsy-89_OS-I#LTR/Gypsy', 'Gypsy-176_OS-I#LTR/Gypsy', 'Gypsy-192_OS-LTR#LTR/Gypsy', 'Copia-55_OS-LTR#LTR/Copia', 'Gypsy-180_OS-I#LTR/Gypsy', 'Gypsy-169_OS-I#LTR/Gypsy', 'Gypsy-224_OS-LTR#LTR/Gypsy', 'GYPSI_I#LTR/Gypsy', 'Gypsy-65_OS-I#LTR/Gypsy', 'SZ-10_LTR#LTR/Gypsy', 'CPSC4A_LTR#LTR/Copia', 'Copia-96_OS-LTR#LTR/Copia', 'Gypsy-40B_OS-LTR#LTR/Gypsy', 'Copia-73_OS-LTR#LTR/Copia', 'Gypsy-25B_OS-LTR#LTR/Gypsy', 'Gypsy-118_OS-LTR#LTR/Gypsy', 'Copia-103_OS-I#LTR/Copia', 'RIREXJ_I#LTR/Gypsy', 'Copia-131_OS-LTR#LTR/Copia', 'LTR-26_OS-I#LTR/Gypsy', 'Gypsy-62_OS-I#LTR/Gypsy', 'Gypsy-196_OS-LTR#LTR/Gypsy', 'Gypsy-247_OS-LTR#LTR/Gypsy', 'Gypsy-95_OS-I#LTR/Gypsy', 'Copia-75_OS-I#LTR/Copia', 'Gypsy-96_OS-I#LTR/Gypsy', 'SZ-37_I#LTR/Copia', 'RIRE3_LTR#LTR/Gypsy', 'Gypsy-89_OS-LTR#LTR/Gypsy', 'Copia-67_OS-I#LTR/Copia', 'SZ-56_I#LTR/Gypsy', 'ATLANTYS-I_OS#LTR/Gypsy', 'Gypsy-115_OS-LTR#LTR/Gypsy', 'COPI2_I#LTR/Copia', 'Copia-135_OS-LTR#LTR/Copia', 'Copia-122_OS-LTR#LTR/Copia', 'SC-6_LTR#LTR/Copia', 'CPSC4A_I#LTR/Copia', 'Gypsy-163_OS-I#LTR/Gypsy', 'Gypsy-21_OS-LTR#LTR/Gypsy', 'Copia-57_OS-I#LTR/Copia', 'CPSC3_LTR#LTR/Copia', 'COPI1_I#LTR/Copia', 'Gypsy-73_OS-I#LTR/Gypsy', 'Gypsy-171_OS-LTR#LTR/Gypsy', 'Copia-132_OS-LTR#LTR/Copia', 'SZ-54D_LTR#LTR/Gypsy', 'Gypsy-8B_OS-LTR#LTR/Gypsy', 'LTR-28_OS-LTR#LTR/Gypsy', 'Copia-26_OS-LTR#LTR/Copia', 'Copia-14_OS-I#LTR/Copia', 'Gypsy-80_OS-I#LTR/Gypsy', 'Gypsy-168_OS-LTR#LTR/Gypsy', 'SC-10_I#LTR/Copia', 'Copia-64_OS-LTR#LTR/Copia', 'Copia-65_OS-LTR#LTR/Copia', 'LTR-27_OS-LTR#LTR/Gypsy', 'Gypsy-105_OS-I#LTR/Gypsy', 'Gypsy-74_OS-LTR#LTR/Gypsy', 'LTR10_OS#LTR', 'OSTONOR1_LTR#LTR/Copia', 'Copia-61_OS-I#LTR/Copia', 'Gypsy-115_OS-I#LTR/Gypsy', 'Copia-97_OS-I#LTR/Copia', 'Gypsy-47_OS-I#LTR/Gypsy', 'Copia-115_OS-I#LTR/Copia', 'Gypsy-182_OS-LTR#LTR/Gypsy', 'Gypsy-21_OS-I#LTR/Gypsy', 'Gypsy-72_OS-I#LTR/Gypsy', 'Gypsy-249_OS-LTR#LTR/Gypsy', 'Gypsy-217_OS-I#LTR/Gypsy', 'Copia-107_OS-I#LTR/Copia', 'SZ-54C_I#LTR/Gypsy', 'Gypsy-62_OS-LTR#LTR/Gypsy', 'Copia-101_OS-LTR#LTR/Copia', 'Gypsy-254_OS-I#LTR/Gypsy', 'Copia-93_OS-LTR#LTR/Copia', 'LTR-23B_OS-LTR#LTR', 'SZ-17_LTR#LTR/Copia', 'COPI2_LTR#LTR/Copia', 'OSTONOR1_I#LTR/Copia', 'RETROFIT7_LTR#LTR/Copia', 'Copia-63_OS-LTR#LTR/Copia', 'RETROSOR2_I#LTR/Gypsy', 'Gypsy-228_OS-I#LTR/Gypsy', 'SZ-67LTR#LTR', 'Gypsy-104_OS-LTR#LTR/Gypsy', 'Gypsy-188_OS-I#LTR/Gypsy', 'Copia-91_OS-I#LTR/Copia', 'SZ-55C_LTR#LTR/Copia', 'Copia-46_OS-LTR#LTR/Copia', 'Gypsy-91_OS-LTR#LTR/Gypsy', 'Copia-85_OS-LTR#LTR/Copia', 'Gypsy-179B_OS-LTR#LTR/Gypsy', 'Gypsy-28_OS-LTR#LTR/Gypsy', 'RIRE7_I#LTR/Gypsy', 'Gypsy-75_OS-LTR#LTR/Gypsy', 'SZ-54_I#LTR/Gypsy', 'SZ-64_LTR#LTR/Gypsy', 'Gypsy-125_OS-LTR#LTR/Gypsy', 'Gypsy-206_OS-LTR#LTR/Gypsy', 'Gypsy-231_OS-I#LTR/Gypsy', 'Gypsy-207_OS-LTR#LTR/Gypsy', 'SZ-9LTR#LTR/Copia', 'Copia-104_OS-I#LTR/Copia', 'SZ-7C-I#LTR/Gypsy', 'SC-8B_LTR#LTR/Copia', 'GYPSI_LTR#LTR/Gypsy', 'Copia-17_OS-I#LTR/Copia', 'Gypsy-146B_OS-LTR#LTR/Gypsy', 'Copia-136_OS-I#LTR/Copia', 'Gypsy-173_OS-LTR#LTR/Gypsy', 'SZ-7A_LTR#LTR/Gypsy', 'Gypsy-33C_OS-LTR#LTR/Gypsy', 'RETROFIT3_I#LTR/Copia', 'Gypsy-22_OS-I#LTR/Gypsy', 'Copia-125_OS-LTR#LTR/Copia', 'Gypsy-47_OS-LTR#LTR/Gypsy', 'Gypsy-264_OS-I#LTR/Gypsy', 'Copia-72_OS-I#LTR/Copia', 'Gypsy-72_OS-LTR#LTR/Gypsy', 'Gypsy-61_OS-LTR#LTR/Gypsy', 'LTR-22B_OS-I#LTR', 'LTR-28_OS-I#LTR/Gypsy', 'Gypsy-251_OS-LTR#LTR/Gypsy', 'Copia-103_OS-LTR#LTR/Copia', 'Gypsy-144_OS-I#LTR/Gypsy', 'Copia-90_OS-I#LTR/Copia', 'Gypsy-40_OS-I#LTR/Gypsy', 'Gypsy-80B_OS-LTR#LTR/Gypsy', 'Gypsy-77_OS-I#LTR/Gypsy', 'SC-3_I#LTR/Copia', 'Gypsy-90_OS-LTR#LTR/Gypsy', 'CPSC2_LTR#LTR/Copia', 'COPIA1-I_OS#LTR/Copia', 'Gypsy-8_OS-LTR#LTR/Gypsy', 'GYPSY1-LTR_OS#LTR/Gypsy', 'Copia-40_OS-LTR#LTR/Copia', 'Copia-52_OS-LTR#LTR/Copia', 'OSCOPIA2_I#LTR/Copia', 'SZ-22_LTR#LTR/Gypsy', 'Gypsy-199_OS-I#LTR/Gypsy', 'Gypsy-126_OS-LTR#LTR/Gypsy', 'SZ-26_LTR#LTR/Gypsy', 'Copia-51_OS-LTR#LTR/Copia', 'Copia-107_OS-LTR#LTR/Copia', 'SZ-7C-LTR#LTR/Gypsy', 'Copia-65_OS-I#LTR/Copia', 'Gypsy-74_OS-I#LTR/Gypsy', 'Gypsy-90_OS-I#LTR/Gypsy', 'RETROSAT4_I#LTR/Gypsy', 'Copia-27_OS-I#LTR/Copia', 'Gypsy-165_OS-I#LTR/Gypsy', 'Gypsy-130B_OS-LTR#LTR/Gypsy', 'Copia-11B_OS-LTR#LTR/Copia', 'Gypsy-138_OS-I#LTR/Gypsy', 'Gypsy-46_OS-LTR#LTR/Gypsy', 'Gypsy-172B_OS-LTR#LTR/Gypsy', 'RETROSAT3_LTR#LTR/Gypsy', 'Gypsy-234_OS-I#LTR/Gypsy', 'Gypsy-212_OS-LTR#LTR/Gypsy', 'Gypsy-225_OS-I#LTR/Gypsy', 'SZ-55_LTR#LTR/Copia', 'Gypsy-111_OS-I#LTR/Gypsy', 'Gypsy-208_OS-I#LTR/Gypsy', 'Gypsy-254_OS-LTR#LTR/Gypsy', 'Copia-54_OS-LTR#LTR/Copia', 'Gypsy-219B_OS-LTR#LTR/Gypsy', 'SZ-4_LTR#LTR/Gypsy', 'Copia-61_OS-LTR#LTR/Copia', 'Gypsy-144_OS-LTR#LTR/Gypsy', 'Gypsy-7_OS-LTR#LTR/Gypsy', 'Gypsy-208_OS-LTR#LTR/Gypsy', 'Copia-62_OS-LTR#LTR/Copia', 'Copia-18_OS-I#LTR/Copia', 'RIRE5-LTR_OS#LTR/Copia', 'SZ-50_LTR#LTR/Gypsy', 'ATLANTYS-LTR_OS#LTR/Gypsy', 'LTR-36_OS-LTR#LTR', 'Gypsy-284_OS-I#LTR/Gypsy', 'Copia-54_OS-I#LTR/Copia', 'Gypsy-106_OS-LTR#LTR/Gypsy', 'Gypsy-7B_OS-LTR#LTR/Gypsy', 'Copia-90_OS-LTR#LTR/Copia', 'GYPSO_LTR#LTR/Gypsy', 'Gypsy-86_OS-LTR#LTR/Gypsy', 'Gypsy-104_OS-I#LTR/Gypsy', 'Copia-135_OS-I#LTR/Copia', 'RETRO2A_LTR#LTR/Gypsy', 'SZ-8_I#LTR/Gypsy', 'Copia-18_OS-LTR#LTR/Copia', 'Gypsy-67_OS-LTR#LTR/Gypsy', 'LTR-27_OS-I#LTR', 'Gypsy-196_OS-I#LTR/Gypsy', 'SZ-52_LTR#LTR/Gypsy', 'Gypsy-87_OS-I#LTR/Gypsy', 'Gypsy-163_OS-LTR#LTR/Gypsy', 'LTR-15_OS-I#LTR', 'Gypsy-65_OS-LTR#LTR/Gypsy', 'Gypsy-8B_OS-I#LTR/Gypsy', 'SZ-66B-LTR#LTR/Gypsy', 'Copia-16_OS-LTR#LTR/Copia', 'OSR42_I#LTR/Gypsy', 'Gypsy-40_OS-LTR#LTR/Gypsy', 'Gypsy-213_OS-LTR#LTR/Gypsy', 'SC-10_LTR#LTR/Copia', 'Gypsy-35_OS-I#LTR/Gypsy', 'Gypsy-8_OS-I#LTR/Gypsy', 'Gypsy-93_OS-I#LTR/Gypsy', 'OSR3_I#LTR/Gypsy', 'Gypsy-175_OS-I#LTR/Gypsy', 'SZ-63_LTR#LTR/Gypsy', 'Gypsy-116_OS-I#LTR/Gypsy', 'Gypsy-154_OS-LTR#LTR/Gypsy', 'Copia-37_OS-I#LTR/Copia', 'BAJIELTR#LTR/Gypsy', 'SZ-66C_LTR#LTR/Gypsy', 'Gypsy-84_OS-I#LTR/Gypsy', 'Gypsy-174_OS-LTR#LTR/Gypsy', 'SZ-55B_LTR#LTR/Copia', 'Gypsy-64_OS-LTR#LTR/Gypsy', 'Gypsy-227_OS-LTR#LTR/Gypsy', 'RETROSOR2_LTR#LTR/Gypsy', 'LTR-18K_OS-LTR#LTR', 'SZ-36LTR#LTR/Gypsy', 'Gypsy-179_OS-I#LTR/Gypsy', 'Gypsy-105_OS-LTR#LTR/Gypsy', 'SC-9_I#LTR/Copia', 'Gypsy-176_OS-LTR#LTR/Gypsy', 'LTR-11_OS-LTR#LTR', 'SZ-59_I#LTR/Gypsy', 'RETROFIT2_LTR#LTR/Copia', 'Gypsy-169_OS-LTR#LTR/Gypsy', 'SZ-54C_LTR#LTR/Gypsy', 'GYPSY-B_LTR#LTR/Gypsy', 'rn_179-105_IR#LTR/Copia', 'Copia-62_OS-I#LTR/Copia', 'Copia-114_OS-LTR#LTR/Copia', 'COPIA1-LTR_OS#LTR/Copia', 'Gypsy-25H_OS-LTR#LTR/Gypsy', 'LTR-34_OS-LTR#LTR', 'Gypsy-113_OS-LTR#LTR/Gypsy', 'SZ-54A_LTR#LTR/Gypsy', 'Gypsy-92_OS-LTR#LTR/Gypsy', 'RETROFIT6_LTR#LTR/Copia', 'Copia-73_OS-I#LTR/Copia', 'RIRE8B_I#LTR/Gypsy', 'Gypsy-100_OS-I#LTR/Gypsy', 'SZ-25LTR#LTR/Copia', 'Gypsy-84_OS-LTR#LTR/Gypsy'}
-    #
-    # # A - B
-    # diff1 = set1.difference(set2)
-    #
-    # # B - A
-    # diff2 = set2.difference(set1)
-    #
-    # # 输出结果
-    # print("存在于 set1 但不存在于 set2 的元素:")
-    # print(diff1)
-    # print(len(diff1))
-    #
-    # print("\n存在于 set2 但不存在于 set1 的元素:")
-    # print(diff2)
-    # print(len(diff2))
-
-    # work_dir = '/home/hukang/NeuralLTR/demo/test1'
-    # left_ltr = work_dir + '/left_LTR.fa'
-    # contignames, contigs = read_fasta(left_ltr)
-    #
-    # ltr_left_frames = work_dir + '/ltr_left_frames'
-    # seq_names = set()
-    # for name in os.listdir(ltr_left_frames):
-    #     seq_name = name.split('.')[0]
-    #     seq_names.add(seq_name)
-    #
-    # miss_path = work_dir + '/left_ltr_miss.fa'
-    # missing_contigs = {}
-    # for name in contignames:
-    #     if name not in seq_names:
-    #         missing_contigs[name] = contigs[name]
-    # store_fasta(missing_contigs, miss_path)
-    #
-    # reference = '/home/hukang/NeuralLTR/demo/GCF_000001215.4_Release_6_plus_ISO1_MT_genomic.fa'
-    # threads = 40
-    # temp_dir = work_dir + '/candidate_ltr_miss'
-    # output_dir = work_dir + '/ltr_left_frames_miss'
-    # split_ref_dir = work_dir + '/ref_chr'
-    # generate_both_ends_frame_from_seq(miss_path, reference, threads, temp_dir, output_dir, split_ref_dir)
-
-    # scn1 = '/home/hukang/NeuralLTR/demo/test5/confident_ltr.scn'
-    # scn2 = '/home/hukang/NeuralLTR/demo/test4/confident_ltr.scn'
-    # ltr_candidates1, ltr_lines1 = read_scn(scn1, None)
-    # ltr_candidates2, ltr_lines2 = read_scn(scn2, None)
-    # ltr_lines1 = list(ltr_lines1.values())
-    # ltr_lines2 = list(ltr_lines2.values())
-    # count = 0
-    # for line in ltr_lines1:
-    #     if line not in ltr_lines2:
-    #         print(line)
-    #         count += 1
-    # print(count)
-
-    # confident_ltr_internal = ''
-    # deredundant_for_LTR(confident_ltr_internal, tmp_output_dir, threads)
-
-    # align_file = '/homec/xuminghua/NeuralLTR/demo/test1/candidate_ltr/Chr448:23436931-23437224.blast.bed.fa.maf.fa'
-    # output_dir = '/homec/xuminghua/NeuralLTR/demo/test1/test_dir'
-    # if not os.path.exists(output_dir):
-    #     os.makedirs(output_dir)
-    # debug = 1
-    # both_end_frame_path = get_both_ends_frame(query_name, cur_seq, align_file, output_dir, debug)
-
-
-    # matrix_file = '/home/hukang/NeuralLTR/demo/test3/ltr_both_ends_frames/Chr451:525385-525807.matrix'
-    # ltr_name = ''
-    # is_TIR = is_TIR_frame(matrix_file, ltr_name)
-    # print(is_TIR)
-
-
-    # work_dir = '/home/hukang/NeuralLTR/demo/test3'
-    # blastn2Results_path = work_dir + '/test.out'
-    # full_length_out = work_dir + '/test.fl.out'
-    # split_repeats_path = work_dir + '/test.fa'
-    # genome_path = work_dir + '/genome.rename.fa'
-    # tmp_dir = work_dir + '/test_tmp'
-    # tools_dir = '/home/hukang/NeuralLTR/tools'
-    # coverage_threshold = 0.95
-    # category = 'LTR'
-    # lines = generate_full_length_out(blastn2Results_path, full_length_out, split_repeats_path, genome_path, tmp_dir,
-    #                                  tools_dir,
-    #                                  coverage_threshold, category)
-    # print(lines)
-
-
-    # # 我们现在尝试划分 子窗口，计算每个子窗口中随机簇（指的是簇大小为1）的数量
-    # threads = 40
-    # redundant_ltr = '/home/hukang/NeuralLTR/demo/test15/confident_ltr.internal.fa'
-    # work_dir = '/home/hukang/NeuralLTR/demo/test15'
-    # deredundant_for_LTR(redundant_ltr, work_dir, threads)
-
-    # cur_align_file = '/home/hukang/NeuralLTR/demo/test3/raw_ltr_cluster/Ninja_7/1.fa.maf.fa'
-    # cons_seq = cons_from_mafft(cur_align_file)
-    # print(cons_seq)
-
-    # reference = '/home/hukang/NeuralLTR/demo/GCF_000001215.4_Release_6_plus_ISO1_MT_genomic.fa'
-    # scn_file = '/home/hukang/NeuralLTR/demo/test3/test.scn'
-    # ref_names, ref_contigs = read_fasta(reference)
-    # ltr_candidates, ltr_lines = read_scn(scn_file)
-    #
-    # for candidate_index in ltr_candidates.keys():
-    #     (chr_name, left_ltr_start, left_ltr_end, right_ltr_start, right_ltr_end) = ltr_candidates[candidate_index]
-    #
-    #     ref_seq = ref_contigs[chr_name]
-    #     left_ltr_name = chr_name + ':' + str(left_ltr_start) + '-' + str(left_ltr_end)
-    #     left_ltr_seq = ref_seq[left_ltr_start - 1: left_ltr_end]
-    #
-    #     int_ltr_name = chr_name + ':' + str(left_ltr_end) + '-' + str(right_ltr_start)
-    #     int_ltr_seq = ref_seq[left_ltr_end: right_ltr_start - 1]
-    #
-    #     print(left_ltr_name, left_ltr_seq)
-
-
-    # tmp_blast_dir = '/home/hukang/NeuralLTR/demo/test/test_blastn'
-    # threads = 40
-    # TRsearch_dir = '/home/hukang/NeuralLTR/tools'
-    # query_path = '/home/hukang/NeuralLTR/demo/test/test.fa'
-    # subject_path = '/home/hukang/NeuralLTR/demo/test/genome.rename.fa'
-    #
-    # work_dir = '/home/hukang/NeuralLTR/demo/test'
-    # std_tmp_blast_dir = work_dir + '/std_blastn'
-    # standard_lib_out = work_dir + '/std_full_length.out'
-    #
-    # test_tmp_blast_dir = work_dir + '/test_blastn'
-    # test_lib_out = work_dir + '/test_full_length.out'
-    #
-    # # Step 0. Obtaining the length of the genome
-    # names, contigs = read_fasta(subject_path)
-    # chrom_length = {}
-    # for i, name in enumerate(names):
-    #     chr_len = len(contigs[name])
-    #     chrom_length[name] = chr_len
-    #
-    # coverage_threshold = 0.8
-    # category = 'LTR'
-    # tools_dir = TRsearch_dir
-    # multi_process_align_v2(query_path, subject_path, standard_lib_out, std_tmp_blast_dir, threads, chrom_length,
-    #                        coverage_threshold, category, tools_dir, is_removed_dir=True)
-
-    # intact_dir = tmp_blast_dir + '/intact_tmp'
-    # divergence_threshold = 20
-    # full_length_threshold = 0.8
-    # search_struct = False
-    # full_length_annotations, copies_direct = get_full_length_copies_RM(query_path, subject_path, intact_dir, threads,
-    #                                                                    divergence_threshold,
-    #                                                                    full_length_threshold, search_struct,
-    #                                                                    TRsearch_dir)
-    # print(full_length_annotations)
-
-
-    # cur_matrix_file = '/home/hukang/LTR_Benchmarking/LTR_libraries/Ours/zebrafish/ltr_both_frames/chr_2:13128730-13128881.matrix'
-    # seq_name, is_ltr = judge_both_ends_frame_v1(cur_matrix_file, debug=1)
-    # print(seq_name, is_ltr)
-
-    # tmp_output_dir = '/home/hukang/NeuralLTR/demo/test2'
-    # # Step4.1 调用同源规则，继续过滤深度学习未能识别的假阳性序列
-    # dl_output_path = tmp_output_dir + '/is_LTR_deep.txt'
-    # homo_output_path = tmp_output_dir + '/is_LTR_homo.txt'
-    # output_dir = tmp_output_dir + '/ltr_both_ends_frames'
-    # threads = 40
-    # filter_ltr_by_homo(dl_output_path, homo_output_path, output_dir, threads)
-
-    # repbase_path = '/home/hukang/NeuralTE_dataset/Dataset1/all_repbase.ref'
-    # LTR_path = '/home/hukang/NeuralTE_dataset/Dataset1/all_ltr.ref'
-    # rep_names, rep_contigs = read_fasta_v1(repbase_path)
-    # labels = set()
-    # ltr_labels = ('Copia', 'Gypsy', 'Bel-Pao', 'Retrovirus')
-    # ltr_contigs = {}
-    # for name in rep_names:
-    #     label = name.split('\t')[1]
-    #     if label in ltr_labels:
-    #         ltr_contigs[name] = rep_contigs[name]
-    #     labels.add(label)
-    # print(labels)
-    # store_fasta(ltr_contigs, LTR_path)
-
-
     # work_dir = '/home/hukang/NeuralTE_dataset/raw_Repbase'
     #
     # # 抽取出对应物种的library
@@ -2891,189 +2181,195 @@ if __name__ == '__main__':
     # store_fasta(contigs, file_path)
 
 
-    # # 新增实验，在水稻上分析RepeatClassifier和NeuralTE分类标签数量交叉
-    # work_dir = '/home/hukang/NeuralTE_experiment/Dataset5'
-    # NeuralTE_results = work_dir + '/NeuralTE/classified.info'
-    # RC_results = work_dir + '/RC/test.ref.classified'
-    #
-    # rmToWicker = {}
-    # wicker_superfamily_set = set()
-    # with open(config.project_dir + '/data/TEClasses.tsv', 'r') as f_r:
-    #     for i, line in enumerate(f_r):
-    #         parts = line.split('\t')
-    #         rm_type = parts[5]
-    #         rm_subtype = parts[6]
-    #         repbase_type = parts[7]
-    #         wicker_type = parts[8]
-    #         wicker_type_parts = wicker_type.split('/')
-    #         # print(rm_type + ',' + rm_subtype + ',' + repbase_type + ',' + wicker_type)
-    #         if len(wicker_type_parts) != 3:
-    #             continue
-    #         wicker_superfamily_parts = wicker_type_parts[-1].strip().split(' ')
-    #         if len(wicker_superfamily_parts) == 1:
-    #             wicker_superfamily = wicker_superfamily_parts[0]
-    #         elif len(wicker_superfamily_parts) > 1:
-    #             wicker_superfamily = wicker_superfamily_parts[1].replace('(', '').replace(')', '')
-    #         rm_full_type = rm_type + '/' + rm_subtype
-    #         if wicker_superfamily == 'ERV':
-    #             wicker_superfamily = 'Retrovirus'
-    #         if wicker_superfamily == 'Viper':
-    #             wicker_superfamily = 'VIPER'
-    #         if wicker_superfamily == 'H':
-    #             wicker_superfamily = 'Helitron'
-    #         rmToWicker[rm_full_type] = wicker_superfamily
-    #         wicker_superfamily_set.add(wicker_superfamily)
-    # # Supplement some elements
-    # rmToWicker['LINE/R2'] = 'R2'
-    # rmToWicker['LINE/Tad1'] = 'I'
-    # rmToWicker['LINE?/L1'] = 'L1'
-    # rmToWicker['LINE/CR1'] = 'I'
-    # rmToWicker['DNA/PIF'] = 'PIF-Harbinger'
-    # rmToWicker['SINE/ID'] = 'tRNA'
-    # rmToWicker['SINE/MIR'] = 'tRNA'
-    # rmToWicker['SINE/tRNA-Deu-I'] = 'tRNA'
-    # rmToWicker['DNA/CMC'] = 'CACTA'
-    # rmToWicker['DNA?/hAT'] = 'hAT'
-    # rmToWicker['LTR/ERVL'] = 'Retrovirus'
-    # rmToWicker['LINE/R2-NeSL'] = 'R2'
-    # rmToWicker['DNA/Zator'] = 'Tc1-Mariner'
-    # rmToWicker['Unknown'] = 'Unknown'
-    #
-    # print(rmToWicker)
-    # print(wicker_superfamily_set)
-    # print(len(wicker_superfamily_set))
-    #
-    # # As the dataset lacks these four types: Ngaro, VIPER, Maverick, and PiggyBac,
-    # # instances predicted as these categories are marked as Unknown
-    # filter_labels = ('Ngaro', 'VIPER', 'Maverick', 'PiggyBac')
-    #
-    # ## 2.3 Retrieve labels classified by RepeatClassifier; for labels that didn't
-    # # annotate to the superfamily or were incorrect, label them as Unknown
-    # # (as our dataset labels are at the superfamily level)
-    # RC_list = []
-    # names, contigs = read_fasta_v1(RC_results)
-    # RC_name_labels = {}
-    # all_unique_RM_label = set()
-    # for name in names:
-    #     label = name.split('#')[1].split(' ')[0]
-    #     if not rmToWicker.__contains__(label):
-    #         all_unique_RM_label.add(label)
-    #         label = 'Unknown'
-    #     else:
-    #         wicker_superfamily = rmToWicker[label]
-    #         label = wicker_superfamily
-    #         if label in filter_labels:
-    #             label = 'Unknown'
-    #         all_unique_RM_label.add(label)
-    #     RC_name_labels[name.split('#')[0]] = label
-    #     RC_list.append(name.split('#')[0]+'#'+label)
-    # print('all_unique_RM_label:' + str(all_unique_RM_label))
-    # print(RC_name_labels)
-    #
-    # gold_standard_list = []
-    # NeuralTE_list = []
-    # NeuralTE_name_labels = {}
-    # with open(NeuralTE_results, 'r') as f_r:
-    #     for line in f_r:
-    #         if line.startswith('#'):
-    #             continue
-    #         line = line.replace('\n', '')
-    #         parts = line.split(',')
-    #         raw_name = parts[0]
-    #         gold_standard = parts[1]
-    #         label = parts[2]
-    #         NeuralTE_name_labels[raw_name] = (gold_standard, label)
-    #         gold_standard_list.append(raw_name+'#'+gold_standard)
-    #         NeuralTE_list.append(raw_name + '#' + label)
-    #
-    # # 1.金标准、RC、NeuralTE共有
-    # count1 = 0
-    # # 2. 金标准与RC共有、NeuralTE不同
-    # count2 = 0
-    # # 3. 金标准与NeuralTE共有、RC不同
-    # count3 = 0
-    # # 4. RC与NeuralTE共有、金标准不同
-    # count4 = 0
-    # # 5. 金标准、RC、NeuralTE均不相同
-    # count5 = 0
-    # # 6. 金标准与RC和NeuralTE均不相同
-    # count6 = 0
-    # # 7. RC与金标准和NeuralTE都不同
-    # count7 = 0
-    # # 8. NeuralTE 与金标准和 RC 都不同
-    # count8 = 0
-    # for raw_name in NeuralTE_name_labels.keys():
-    #     gold_standard, NeuralTE_label = NeuralTE_name_labels[raw_name]
-    #     RC_label = RC_name_labels[raw_name]
-    #     if gold_standard == NeuralTE_label and gold_standard == RC_label:
-    #         count1 += 1
-    #     elif gold_standard == RC_label and gold_standard != NeuralTE_label:
-    #         count2 += 1
-    #     elif gold_standard != RC_label and gold_standard == NeuralTE_label:
-    #         count3 += 1
-    #     elif gold_standard != RC_label and gold_standard != NeuralTE_label and NeuralTE_label == RC_label:
-    #         count4 += 1
-    #     elif gold_standard != RC_label and gold_standard != NeuralTE_label and NeuralTE_label != RC_label:
-    #         count5 += 1
-    #
-    #     if gold_standard != RC_label and gold_standard != NeuralTE_label:
-    #         count6 += 1
-    #     if RC_label != gold_standard and RC_label != NeuralTE_label:
-    #         count7 += 1
-    #     if NeuralTE_label != gold_standard and NeuralTE_label != RC_label:
-    #         count8 += 1
-    # print('总共数量:' + str(len(NeuralTE_name_labels)))
-    # print('金标准、RC、NeuralTE共有:' + str(count1))
-    # print('金标准与RC共有、NeuralTE不同:' + str(count2))
-    # print('金标准与NeuralTE共有、RC不同:' + str(count3))
-    # print('RC与NeuralTE共有、金标准不同:' + str(count4))
-    # print('金标准、RC、NeuralTE均不相同:' + str(count5))
-    # print('金标准与RC和NeuralTE均不相同:' + str(count6))
-    # print('RC与金标准和NeuralTE都不同:' + str(count7))
-    # print('NeuralTE与金标准和RC都不同:' + str(count8))
-    #
-    # # import matplotlib.pyplot as plt
-    # # from matplotlib_venn import venn3
-    # #
-    # # # 输入数据
-    # # venn_labels = {'100': 118, '010': 831, '001': 198, '110': 92, '101': 725, '011': 12, '111': 1564}
-    # #
-    # # # 画韦恩图
-    # # venn_diagram = venn3(subsets=(1, 1, 1, 1, 1, 1, 1), set_labels=('Gold Standard', 'RepeatClassifier', 'NeuralTE'))
-    # # venn_diagram.get_label_by_id('100').set_text(venn_labels['100'])
-    # # venn_diagram.get_label_by_id('010').set_text(venn_labels['010'])
-    # # venn_diagram.get_label_by_id('001').set_text(venn_labels['001'])
-    # # venn_diagram.get_label_by_id('110').set_text(venn_labels['110'])
-    # # venn_diagram.get_label_by_id('101').set_text(venn_labels['101'])
-    # # venn_diagram.get_label_by_id('011').set_text(venn_labels['011'])
-    # # venn_diagram.get_label_by_id('111').set_text(venn_labels['111'])
-    # # output_fig = '/home/hukang/NeuralTE_experiment/Dataset5/cross_num.png'
-    # # # 显示图形
-    # # plt.tight_layout()
-    # # # 显示图形
-    # # # plt.show()
-    # # plt.savefig(output_fig, format='png')
-    #
-    # from matplotlib import pyplot as plt
+    # 新增实验，在水稻上分析RepeatClassifier和NeuralTE分类标签数量交叉
+    work_dir = '/home/hukang/NeuralTE_experiment/Dataset5'
+    NeuralTE_results = work_dir + '/NeuralTE/classified.info'
+    RC_results = work_dir + '/RC/test.ref.classified'
+
+    rmToWicker = {}
+    wicker_superfamily_set = set()
+    with open(config.project_dir + '/data/TEClasses.tsv', 'r') as f_r:
+        for i, line in enumerate(f_r):
+            parts = line.split('\t')
+            rm_type = parts[5]
+            rm_subtype = parts[6]
+            repbase_type = parts[7]
+            wicker_type = parts[8]
+            wicker_type_parts = wicker_type.split('/')
+            # print(rm_type + ',' + rm_subtype + ',' + repbase_type + ',' + wicker_type)
+            if len(wicker_type_parts) != 3:
+                continue
+            wicker_superfamily_parts = wicker_type_parts[-1].strip().split(' ')
+            if len(wicker_superfamily_parts) == 1:
+                wicker_superfamily = wicker_superfamily_parts[0]
+            elif len(wicker_superfamily_parts) > 1:
+                wicker_superfamily = wicker_superfamily_parts[1].replace('(', '').replace(')', '')
+            rm_full_type = rm_type + '/' + rm_subtype
+            if wicker_superfamily == 'ERV':
+                wicker_superfamily = 'Retrovirus'
+            if wicker_superfamily == 'Viper':
+                wicker_superfamily = 'VIPER'
+            if wicker_superfamily == 'H':
+                wicker_superfamily = 'Helitron'
+            rmToWicker[rm_full_type] = wicker_superfamily
+            wicker_superfamily_set.add(wicker_superfamily)
+    # Supplement some elements
+    rmToWicker['LINE/R2'] = 'R2'
+    rmToWicker['LINE/Tad1'] = 'I'
+    rmToWicker['LINE?/L1'] = 'L1'
+    rmToWicker['LINE/CR1'] = 'I'
+    rmToWicker['DNA/PIF'] = 'PIF-Harbinger'
+    rmToWicker['SINE/ID'] = 'tRNA'
+    rmToWicker['SINE/MIR'] = 'tRNA'
+    rmToWicker['SINE/tRNA-Deu-I'] = 'tRNA'
+    rmToWicker['DNA/CMC'] = 'CACTA'
+    rmToWicker['DNA?/hAT'] = 'hAT'
+    rmToWicker['LTR/ERVL'] = 'Retrovirus'
+    rmToWicker['LINE/R2-NeSL'] = 'R2'
+    rmToWicker['DNA/Zator'] = 'Tc1-Mariner'
+    rmToWicker['Unknown'] = 'Unknown'
+
+    print(rmToWicker)
+    print(wicker_superfamily_set)
+    print(len(wicker_superfamily_set))
+
+    # As the dataset lacks these four types: Ngaro, VIPER, Maverick, and PiggyBac,
+    # instances predicted as these categories are marked as Unknown
+    filter_labels = ('Ngaro', 'VIPER', 'Maverick', 'PiggyBac')
+
+    ## 2.3 Retrieve labels classified by RepeatClassifier; for labels that didn't
+    # annotate to the superfamily or were incorrect, label them as Unknown
+    # (as our dataset labels are at the superfamily level)
+    RC_list = []
+    names, contigs = read_fasta_v1(RC_results)
+    RC_name_labels = {}
+    all_unique_RM_label = set()
+    for name in names:
+        label = name.split('#')[1].split(' ')[0]
+        if not rmToWicker.__contains__(label):
+            all_unique_RM_label.add(label)
+            label = 'Unknown'
+        else:
+            wicker_superfamily = rmToWicker[label]
+            label = wicker_superfamily
+            if label in filter_labels:
+                label = 'Unknown'
+            all_unique_RM_label.add(label)
+        RC_name_labels[name.split('#')[0]] = label
+        RC_list.append(name.split('#')[0]+'#'+label)
+    print('all_unique_RM_label:' + str(all_unique_RM_label))
+    print(RC_name_labels)
+
+    gold_standard_list = []
+    NeuralTE_list = []
+    NeuralTE_name_labels = {}
+    with open(NeuralTE_results, 'r') as f_r:
+        for line in f_r:
+            if line.startswith('#'):
+                continue
+            line = line.replace('\n', '')
+            parts = line.split(',')
+            raw_name = parts[0]
+            gold_standard = parts[1]
+            label = parts[2]
+            NeuralTE_name_labels[raw_name] = (gold_standard, label)
+            gold_standard_list.append(raw_name+'#'+gold_standard)
+            NeuralTE_list.append(raw_name + '#' + label)
+
+    # 1.金标准、RC、NeuralTE共有
+    count1 = 0
+    # 2. 金标准与RC共有、NeuralTE不同
+    count2 = 0
+    # 3. 金标准与NeuralTE共有、RC不同
+    count3 = 0
+    # 4. RC与NeuralTE共有、金标准不同
+    count4 = 0
+    # 5. 金标准、RC、NeuralTE均不相同
+    count5 = 0
+    # 6. 金标准与RC和NeuralTE均不相同
+    count6 = 0
+    # 7. RC与金标准和NeuralTE都不同
+    count7 = 0
+    # 8. NeuralTE 与金标准和 RC 都不同
+    count8 = 0
+    for raw_name in NeuralTE_name_labels.keys():
+        gold_standard, NeuralTE_label = NeuralTE_name_labels[raw_name]
+        RC_label = RC_name_labels[raw_name]
+        if gold_standard == NeuralTE_label and gold_standard == RC_label:
+            count1 += 1
+        elif gold_standard == RC_label and gold_standard != NeuralTE_label:
+            count2 += 1
+        elif gold_standard != RC_label and gold_standard == NeuralTE_label:
+            count3 += 1
+        elif gold_standard != RC_label and gold_standard != NeuralTE_label and NeuralTE_label == RC_label:
+            count4 += 1
+        elif gold_standard != RC_label and gold_standard != NeuralTE_label and NeuralTE_label != RC_label:
+            count5 += 1
+
+        if gold_standard != RC_label and gold_standard != NeuralTE_label:
+            count6 += 1
+        if RC_label != gold_standard and RC_label != NeuralTE_label:
+            count7 += 1
+        if NeuralTE_label != gold_standard and NeuralTE_label != RC_label:
+            count8 += 1
+    print('总共数量:' + str(len(NeuralTE_name_labels)))
+    print('金标准、RC、NeuralTE共有:' + str(count1))
+    print('金标准与RC共有、NeuralTE不同:' + str(count2))
+    print('金标准与NeuralTE共有、RC不同:' + str(count3))
+    print('RC与NeuralTE共有、金标准不同:' + str(count4))
+    print('金标准、RC、NeuralTE均不相同:' + str(count5))
+    print('金标准与RC和NeuralTE均不相同:' + str(count6))
+    print('RC与金标准和NeuralTE都不同:' + str(count7))
+    print('NeuralTE与金标准和RC都不同:' + str(count8))
+
+    # import matplotlib.pyplot as plt
     # from matplotlib_venn import venn3
-    # # 假设有两组数据
-    # set1 = set(gold_standard_list)
-    # set2 = set(NeuralTE_list)
-    # set3 = set(RC_list)
-    # # 创建一个subplot
-    # fig, ax = plt.subplots()
-    # # 绘制韦恩图
-    # #venn_diagram = venn3([set1, set2, set3], ('Gold Standard', 'NeuralTE', 'RepeatClassifier'), set_colors=('#E66255', '#299D92', '#FFCE71'), alpha=0.9)
-    # venn_diagram = venn3([set1, set2, set3], ('Gold Standard', 'NeuralTE', 'RepeatClassifier'))
-    # # plt.legend(handles=[venn_diagram.get_patch_by_id('100'),  # Set 1
-    # #                     venn_diagram.get_patch_by_id('010'),  # Set 2
-    # #                     venn_diagram.get_patch_by_id('001')],  # Set 3
-    # #            labels=['Gold Standard', 'NeuralTE', 'RepeatClassifier'], loc='lower right')
     #
-    # plt.tight_layout()
-    # # 设置图形标题
-    # #plt.title("")
+    # # 输入数据
+    # venn_labels = {'100': 118, '010': 831, '001': 198, '110': 92, '101': 725, '011': 12, '111': 1564}
+    #
+    # # 画韦恩图
+    # venn_diagram = venn3(subsets=(1, 1, 1, 1, 1, 1, 1), set_labels=('Gold Standard', 'RepeatClassifier', 'NeuralTE'))
+    # venn_diagram.get_label_by_id('100').set_text(venn_labels['100'])
+    # venn_diagram.get_label_by_id('010').set_text(venn_labels['010'])
+    # venn_diagram.get_label_by_id('001').set_text(venn_labels['001'])
+    # venn_diagram.get_label_by_id('110').set_text(venn_labels['110'])
+    # venn_diagram.get_label_by_id('101').set_text(venn_labels['101'])
+    # venn_diagram.get_label_by_id('011').set_text(venn_labels['011'])
+    # venn_diagram.get_label_by_id('111').set_text(venn_labels['111'])
     # output_fig = '/home/hukang/NeuralTE_experiment/Dataset5/cross_num.png'
     # # 显示图形
+    # plt.tight_layout()
+    # # 显示图形
+    # # plt.show()
+    # plt.savefig(output_fig, format='png')
+
+    from matplotlib import pyplot as plt
+    from matplotlib_venn import venn3
+    # 假设有两组数据
+    set1 = set(gold_standard_list)
+    set2 = set(NeuralTE_list)
+    set3 = set(RC_list)
+    # 创建一个subplot
+    fig, ax = plt.subplots()
+    # 绘制韦恩图
+    #venn_diagram = venn3([set1, set2, set3], ('Gold Standard', 'NeuralTE', 'RepeatClassifier'), set_colors=('#E66255', '#299D92', '#FFCE71'), alpha=0.9)
+    # venn_diagram = venn3([set1, set2, set3], ('Gold Standard', 'NeuralTE', 'RepeatClassifier'))
+    venn_diagram = venn3([set1, set2, set3], ('', '', ''))
+    # plt.legend(handles=[venn_diagram.get_patch_by_id('100'),  # Set 1
+    #                     venn_diagram.get_patch_by_id('010'),  # Set 2
+    #                     venn_diagram.get_patch_by_id('001')],  # Set 3
+    #            labels=['Gold Standard', 'NeuralTE', 'RepeatClassifier'], loc='lower right')
+
+    for text in venn_diagram.subset_labels:
+        if text:
+            text.set_fontsize(22)
+            text.set_color('black')
+
+    plt.tight_layout()
+    # 设置图形标题
+    #plt.title("")
+    output_fig = '/home/hukang/NeuralTE_experiment/Dataset5/cross_num.png'
+    # 显示图形
     # plt.show()
-    # #plt.savefig(output_fig, format='png')
+    plt.savefig(output_fig, format='png')
