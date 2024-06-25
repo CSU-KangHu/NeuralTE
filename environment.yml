@@ -1,4 +1,4 @@
-name: NeuralTE
+name: NeuralLTR
 channels:
   - conda-forge
   - bioconda
@@ -15,6 +15,11 @@ dependencies:
   - scikit-learn=1.2.0=py38h6a678d5_1
   - rmblast=2.14.0
   - repeatmasker=4.1.1
+  - cd-hit=4.8.1
+  - bedtools=2.30.0
   - seaborn
   - matplotlib
   - openpyxl
+  - fuzzysearch
+  - mafft
+  - ninja-nj
